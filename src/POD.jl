@@ -3,6 +3,7 @@ module POD
 using JuMP
 using MathProgBase
 using Compat
+# using LightGraphs
 
 # Engine for High-level Algorithmic Control and User-interface
 include("algorithm.jl")
