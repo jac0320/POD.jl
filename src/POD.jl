@@ -3,6 +3,7 @@ module POD
 using JuMP
 using MathProgBase
 using Compat
+using Gurobi
 # using LightGraphs
 
 # Engine for High-level Algorithmic Control and User-interface
@@ -16,6 +17,7 @@ include("operators.jl")
 # Main Algorithmic Process
 include("presolve.jl")
 include("amp.jl")
+include("prune.jl")
 
 # Convexification method
 include("tmc.jl")

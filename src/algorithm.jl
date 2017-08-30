@@ -400,6 +400,7 @@ function global_solve(m::PODNonlinearModel)
         local_solve(m)                                                          # Solve upper bounding model
         (m.best_rel_gap <= m.rel_gap || m.logs[:n_iter] >= m.maxiter) && break
         add_partition(m)                                 # Add extra discretizations
+        process_init_graph(m)
     end
 
     return
