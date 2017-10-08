@@ -15,6 +15,9 @@ type PODSolver <: MathProgBase.AbstractMathProgSolver
     rel_gap::Float64
     tol::Float64
 
+    enable_cache::Bool
+    cache_identifier::AbstractString
+
     nlp_local_solver::MathProgBase.AbstractMathProgSolver
     minlp_local_solver::MathProgBase.AbstractMathProgSolver
     mip_solver::MathProgBase.AbstractMathProgSolver
@@ -69,6 +72,9 @@ function PODSolver(;
     rel_gap = 1e-4,
     tol = 1e-6,
 
+    enable_cache = false,
+    cache_identifier = "",
+
     nlp_local_solver = UnsetSolver(),
     minlp_local_solver = UnsetSolver(),
     mip_solver = UnsetSolver(),
@@ -106,12 +112,14 @@ function PODSolver(;
     presolve_mip_timelimit = Inf,
 
     bound_basic_propagation = false,
+
     user_parameters = Dict(),
     kwargs...
     )
 
     unsupport_opts = Dict(kwargs)
     !isempty(keys(unsupport_opts)) && warn("Detected unsupported/experimental arguments = $(keys(unsupport_opts))")
+    isempty(cache_identifier) && (enable_cache = false)
 
     if nlp_local_solver == UnsetSolver()
         error("No NLP local solver specified (set nlp_local_solver)\n")
@@ -124,6 +132,8 @@ function PODSolver(;
     # Deepcopy the solvers because we may change option values inside POD
     PODSolver(dev_debug, dev_test, colorful_pod,
         log_level, timeout, maxiter, rel_gap, tol,
+        enable_cache,
+        cache_identifier,
         deepcopy(nlp_local_solver),
         deepcopy(minlp_local_solver),
         deepcopy(mip_solver),
@@ -175,6 +185,9 @@ function MathProgBase.NonlinearModel(s::PODSolver)
     rel_gap = s.rel_gap
     tol = s.tol
 
+    enable_cache = s.enable_cache
+    cache_identifier = s.cache_identifier
+
     recognize_convex = s.recognize_convex
     bilinear_mccormick = s.bilinear_mccormick
     bilinear_convexhull = s.bilinear_convexhull
@@ -217,6 +230,8 @@ function MathProgBase.NonlinearModel(s::PODSolver)
 
     return PODNonlinearModel(dev_debug, dev_test, colorful_pod,
                             log_level, timeout, maxiter, rel_gap, tol,
+                            enable_cache,
+                            cache_identifier,
                             nlp_local_solver,
                             minlp_local_solver,
                             mip_solver,

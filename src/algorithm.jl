@@ -41,10 +41,10 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
 
     # parameters used to control convhull formulation
     convexhull_sweep_limit::Int                                 # Contoller for formulation density
-    convhull_formulation_sos2::Bool                                   # Convex hull formulation with SOS-2 representation (numerically best so far)
-    convhull_formulation_sos2aux::Bool                                # Speical SOS-2 formulation that utilized auxilary variables
-    convhull_formulation_facet::Bool                                  # Use the facets contraint generated from PORTA
-    convhull_formulation_minib::Bool                                  # Use minimum formulation with boundary cuts
+    convhull_formulation_sos2::Bool                             # Convex hull formulation with SOS-2 representation (numerically best so far)
+    convhull_formulation_sos2aux::Bool                          # Speical SOS-2 formulation that utilized auxilary variables
+    convhull_formulation_facet::Bool                            # Use the facets contraint generated from PORTA
+    convhull_formulation_minib::Bool                            # Use minimum formulation with boundary cuts
 
     # parameters related to presolving
     presolve_track_time::Bool                                   # Account presolve time for total time usage
@@ -58,6 +58,10 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
 
     # Domain Reduction
     bound_basic_propagation::Bool                               # Conduct basic bound propagation
+
+    # Solution Cache
+    enable_cache::Bool                                          # Cache solution file into file or load solution
+    cache_identifier::AbstractString                            # Points to a specifc file for cache
 
     # additional parameters
     user_parameters::Dict                                       # Additional parameters used for user-defined functional inputs
@@ -149,6 +153,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     # constructor
     function PODNonlinearModel(dev_debug, dev_test,colorful_pod,
                                 log_level, timeout, maxiter, rel_gap, tol,
+                                enable_cache,
+                                cache_identifier,
                                 nlp_local_solver,
                                 minlp_local_solver,
                                 mip_solver,
@@ -193,6 +199,9 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.maxiter = maxiter
         m.rel_gap = rel_gap
         m.tol = tol
+
+        m.enable_cache = enable_cache
+        m.cache_identifier = cache_identifier
 
         m.recognize_convex = recognize_convex
         m.bilinear_mccormick = bilinear_mccormick
@@ -393,16 +402,17 @@ function presolve(m::PODNonlinearModel)
     start_presolve = time()
     (m.log_level > 0) && println("\nPOD algorithm presolver started.")
     (m.log_level > 0) && println("Performing local solve to obtain a feasible solution.")
-    local_solve(m, presolve = true)
+
+    !load_initsol_cache(m) && local_solve(m, presolve = true)
 
     # Regarding upcoming changes in status
-    status_pass = [:Optimal, :Suboptimal, :UserLimit]
+    status_pass = [:Optimal, :Suboptimal, :UserLimit, :Loaded]
     status_reroute = [:Infeasible]
 
     if m.status[:local_solve] in status_pass
-        bound_tightening(m, use_bound = true)                              # performs bound-tightening with the local solve objective value
+        bound_tightening(m, use_bound=true)                                # performs bound-tightening with the local solve objective value
         (m.presolve_bound_tightening) && initialize_discretization(m)      # Reinitialize discretization dictionary on tight bounds
-        add_partition(m, use_solution=m.best_sol)  # Setting up the initial discretization
+        add_partition(m, use_solution=m.best_sol)                          # Setting up the initial discretization
     elseif m.status[:local_solve] in status_reroute
         (m.log_level > 0) && println("first attempt at local solve failed, performing bound tightening without objective value...")
         bound_tightening(m, use_bound = false)                      # do bound tightening without objective value
@@ -423,6 +433,8 @@ function presolve(m::PODNonlinearModel)
         error("NLP local solve is $(m.status[:local_solve]) - quitting solve.")
         quit()
     end
+
+    save_initsol_cache(m)
 
     cputime_presolve = time() - start_presolve
     m.logs[:presolve_time] += cputime_presolve
@@ -479,9 +491,7 @@ Otherwise, the function is invoked from [`bounding_solve`](@ref).
 function local_solve(m::PODNonlinearModel; presolve = false)
 
     convertor = Dict(:Max=>:>, :Min=>:<)
-
     var_type_screener = [i for i in m.var_type_orig if i in [:Bin, :Int]]
-
     if presolve
         if !isempty(var_type_screener) && m.minlp_local_solver != UnsetSolver()
             local_solve_nlp_model = MathProgBase.NonlinearModel(m.minlp_local_solver)
@@ -500,13 +510,14 @@ function local_solve(m::PODNonlinearModel; presolve = false)
         end
     end
 
-    if presolve == false
+    if !presolve
         l_var, u_var = fix_domains(m)
     else
         l_var, u_var = m.l_var_orig, m.u_var_orig
     end
+
     MathProgBase.loadproblem!(local_solve_nlp_model, m.num_var_orig, m.num_constr_orig, l_var, u_var, m.l_constr_orig, m.u_constr_orig, m.sense_orig, m.d_orig)
-    (!m.d_orig.want_hess) && MathProgBase.initialize(m.d_orig, [:Grad,:Jac,:Hess,:HessVec, :ExprGraph]) # Safety scheme for sub-solvers re-initializing the NLPEvaluator
+    (!m.d_orig.want_hess) && MathProgBase.initialize(m.d_orig, [:Grad,:Jac,:Hess,:HessVec,:ExprGraph]) # Safety scheme for sub-solvers re-initializing the NLPEvaluator
     (presolve && (:Bin in m.var_type_orig || :Int in m.var_type_orig)) && MathProgBase.setvartype!(local_solve_nlp_model, m.var_type_orig)
     MathProgBase.setwarmstart!(local_solve_nlp_model, m.best_sol[1:m.num_var_orig])
 

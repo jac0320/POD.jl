@@ -2,7 +2,7 @@ module POD
 
 using JuMP
 using MathProgBase
-using Compat
+using JSON, Compat
 
 # Engine for High-level Algorithmic Control and User-interface
 include("algorithm.jl")
@@ -26,5 +26,7 @@ include("utility.jl")
 
 # Othes
 include("log.jl")
+
+!isdir("$(Pkg.dir())/POD/.solvedata") && mkdir("$(Pkg.dir())/POD/.solvedata")
 
 end # module

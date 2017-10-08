@@ -54,6 +54,55 @@ function show_solution(m::JuMP.Model)
 end
 
 """
+    Utility for loading cached solutions
+"""
+function load_initsol_cache(m::PODNonlinearModel)
+
+    !m.enable_cache && return false
+    !isfile("$(Pkg.dir())/POD/.solvedata/$(m.cache_identifier).json") && return false
+    solF = JSON.parsefile("$(Pkg.dir())/POD/.solvedata/$(m.cache_identifier).json")
+    !haskey(solF, "best_sol") && return false
+    !haskey(solF, "best_obj") && return false
+    m.num_var_orig != length(solF["best_sol"]) && return false
+
+    # Quick validation
+    if m.d_orig.has_nlobj
+        valid_obj = solF["best_obj"]
+    else
+        valid_obj = dot(solF["best_sol"], m.d_orig.linobj)
+    end
+    @show valid_obj, solF["best_obj"]
+    !isapprox(valid_obj, solF["best_obj"];atol=1e-3) && return false
+
+    info("loading initial upper bound solution...")
+    m.best_obj = solF["best_obj"]   # TODO: Need expression validation
+    m.best_sol = copy(solF["best_sol"]) # TODO: Need feasibility validation
+    push!(m.logs[:obj], m.best_obj)
+    m.status[:local_solve] = :Loaded
+    m.status[:feasible_solution] = :Detected
+    info("solutio with objective value $(m.best_obj) loaded", prefix="POD: ")
+
+    return true
+end
+
+"""
+    Utility function to store solution and objective value from the initial solve
+"""
+function save_initsol_cache(m::PODNonlinearModel)
+    status_pass = [:Optimal, :Suboptimal, :UserLimit, :Loaded]
+    !m.enable_cache && return
+    isfile("$(Pkg.dir())/POD/.solvedata/$(m.cache_identifier).json") && return
+    !(m.status[:local_solve] in status_pass) && return
+
+    info("recording initial upper bound solution...")
+    solD = Dict(:best_sol => copy(m.best_sol), :best_obj => m.best_obj)
+    solF = open("$(Pkg.dir())/POD/.solvedata/$(m.cache_identifier).json", "w")
+    JSON.print(solF, solD)
+    close(solF)
+    return
+end
+
+"""
     initialize_discretization(m::PODNonlinearModel)
 
 This function initialize the dynamic discretization used for any bounding models. By default, it takes (.l_var_orig, .u_var_orig) as the base information. User is allowed to use alternative bounds for initializing the discretization dictionary.
