@@ -302,14 +302,14 @@ function fix_domains(m::PODNonlinearModel; kwargs...)
             for j in 1:length(m.discretization[i])
                 if point >= (m.discretization[i][j] - m.tol) && (point <= m.discretization[i][j+1] + m.tol)
                     @assert j < length(m.discretization[i])
-                    l_var[i] = m.discretization[i][j]
-                    u_var[i] = m.discretization[i][j+1]
+                    l_var[i] = m.discretization[i][j] - m.tol
+                    u_var[i] = m.discretization[i][j+1] + m.tol
                     break
                 end
             end
         elseif m.var_type_orig[i] == :Bin || m.var_type_orig[i] == :Int
-            l_var[i] = round(m.sol_incumb_lb[i])
-            u_var[i] = round(m.sol_incumb_lb[i])
+            l_var[i] = round(m.sol_incumb_lb[i]) - m.tol
+            u_var[i] = round(m.sol_incumb_lb[i]) + m.tol
         end
     end
 
