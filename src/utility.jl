@@ -71,7 +71,6 @@ function load_initsol_cache(m::PODNonlinearModel)
     else
         valid_obj = dot(solF["best_sol"], m.d_orig.linobj)
     end
-    @show valid_obj, solF["best_obj"]
     !isapprox(valid_obj, solF["best_obj"];atol=1e-3) && return false
 
     info("loading initial upper bound solution...")
@@ -537,7 +536,7 @@ function fetch_minlp_solver_identifier(m::PODNonlinearModel)
     (m.minlp_local_solver == UnsetSolver()) && return
     if string(m.minlp_local_solver)[1:6] == "AmplNL"
         m.minlp_local_solver_identifier = "Bonmin"
-    elseif string(m.minlp_local_solver)[1:6] == "Knitro"
+    elseif string(m.minlp_local_solver)[1:6] == "KNITRO"
         m.minlp_local_solver_identifier = "Knitro"
     elseif string(m.minlp_local_solver)[1:8] == "Pajarito"
         m.minlp_local_solver_identifier = "Pajarito"
