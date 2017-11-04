@@ -149,7 +149,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
 
     # constructor
     function PODNonlinearModel(dev_debug, dev_test,colorful_pod,
-                                log_level, timeout, maxiter, rel_gap, tol,
+                                log_level, timeout, maxiter, rel_gap, tol, tol_fea,
                                 nlp_local_solver,
                                 minlp_local_solver,
                                 mip_solver,
@@ -194,6 +194,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.maxiter = maxiter
         m.rel_gap = rel_gap
         m.tol = tol
+        m.tol_fea = tol_fea
 
         m.recognize_convex = recognize_convex
         m.bilinear_mccormick = bilinear_mccormick
@@ -243,8 +244,6 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.var_start_orig = Float64[]
         m.constr_type_orig = Symbol[]
         m.constr_expr_orig = Expr[]
-        m.constr_lb_orig = Float64[]
-        m.constr_ub_orig = Float64[]
         m.num_lconstr_updated = 0
         m.num_nlconstr_updated = 0
         m.indexes_lconstr_updated = Int[]
@@ -308,18 +307,17 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
 
     # Summarize constraints information in original model
     @compat m.constr_type_orig = Array{Symbol}(m.num_constr_orig)
-    m.constr_lb_orig, m.constr_ub_orig = JuMP.constraint(m.d_orig.m)
-    @assert length(m.constr_lb_orig) == m.num_constr_orig
+    @assert length(m.l_constr_orig) == m.num_constr_orig
     for i in 1:m.num_constr_orig
         if l_constr[i] > -Inf && u_constr[i] < Inf
             m.constr_type_orig[i] = :(==)
-            @assert m.constr_lb_orig[i] == m.constr_ub_orig[i]
+            @assert m.l_constr_orig[i] == m.u_constr_orig[i]
         elseif l_constr[i] > -Inf
             m.constr_type_orig[i] = :(>=)
-            @assert m.constr_ub_orig[i] == Inf
+            @assert m.u_constr_orig[i] == Inf
         else
             m.constr_type_orig[i] = :(<=)
-            @assert m.constr_lb_orig[i] == Inf
+            @assert m.l_constr_orig[i] == -Inf
         end
     end
 
@@ -510,7 +508,7 @@ function local_solve(m::PODNonlinearModel; presolve = false)
     end
 
     if presolve
-        l_var, u_var = m.l_var_tight, m.u_var_tight
+        l_var, u_var = m.l_var_orig, m.u_var_orig
     else
         l_var, u_var = fix_domains(m)
     end
@@ -527,7 +525,13 @@ function local_solve(m::PODNonlinearModel; presolve = false)
 
     (!m.d_orig.want_hess) && MathProgBase.initialize(m.d_orig, [:Grad,:Jac,:Hess,:HessVec, :ExprGraph]) # Safety scheme for sub-solvers re-initializing the NLPEvaluator
     presolve && has_discrete_var && MathProgBase.setvartype!(local_solve_nlp_model, m.var_type_orig)
-    MathProgBase.setwarmstart!(local_solve_nlp_model, m.best_sol[1:m.num_var_orig])
+    if isempty(m.sol_incumb_lb)
+        println("[BETA] warm starting local solve using UB solution (RISKY)")
+        MathProgBase.setwarmstart!(local_solve_nlp_model, m.best_sol[1:m.num_var_orig])
+    else
+        println("[BETA] warm starting local solve using LB solution (RISKY)")
+        MathProgBase.setwarmstart!(local_solve_nlp_model, m.sol_incumb_lb[1:m.num_var_orig])
+    end
 
     start_local_solve = time()
     MathProgBase.optimize!(local_solve_nlp_model)
@@ -550,8 +554,6 @@ function local_solve(m::PODNonlinearModel; presolve = false)
         m.status[:local_solve] = local_solve_nlp_status
         return
     elseif local_solve_nlp_status in status_reroute
-        push!(m.logs[:obj], "-")
-        m.status[:local_solve] = :Infeasible
         m.status[:local_solve] = heu_relaxation_rounding(m)
         return
     elseif local_solve_nlp_status == :Unbounded

@@ -14,6 +14,7 @@ type PODSolver <: MathProgBase.AbstractMathProgSolver
     maxiter::Int
     rel_gap::Float64
     tol::Float64
+    tol_fea::Float64
 
     nlp_local_solver::MathProgBase.AbstractMathProgSolver
     minlp_local_solver::MathProgBase.AbstractMathProgSolver
@@ -68,6 +69,7 @@ function PODSolver(;
     maxiter = 99,
     rel_gap = 1e-4,
     tol = 1e-6,
+    tol_fea = 1e-6,
 
     nlp_local_solver = UnsetSolver(),
     minlp_local_solver = UnsetSolver(),
@@ -123,7 +125,7 @@ function PODSolver(;
 
     # Deepcopy the solvers because we may change option values inside POD
     PODSolver(dev_debug, dev_test, colorful_pod,
-        log_level, timeout, maxiter, rel_gap, tol,
+        log_level, timeout, maxiter, rel_gap, tol, tol_fea,
         deepcopy(nlp_local_solver),
         deepcopy(minlp_local_solver),
         deepcopy(mip_solver),
@@ -174,6 +176,7 @@ function MathProgBase.NonlinearModel(s::PODSolver)
     maxiter = s.maxiter
     rel_gap = s.rel_gap
     tol = s.tol
+    tol_fea = s.tol_fea
 
     recognize_convex = s.recognize_convex
     bilinear_mccormick = s.bilinear_mccormick
@@ -216,7 +219,7 @@ function MathProgBase.NonlinearModel(s::PODSolver)
     user_parameters = s.user_parameters
 
     return PODNonlinearModel(dev_debug, dev_test, colorful_pod,
-                            log_level, timeout, maxiter, rel_gap, tol,
+                            log_level, timeout, maxiter, rel_gap, tol, tol_fea,
                             nlp_local_solver,
                             minlp_local_solver,
                             mip_solver,

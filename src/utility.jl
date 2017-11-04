@@ -294,16 +294,16 @@ This function is used to fix variables to certain domains during the local solve
 More specifically, it is used in [`local_solve`](@ref) to fix binary and integer variables to lower bound solutions
 and discretizing varibles to the active domain according to lower bound solution.
 """
-function fix_domains(m::PODNonlinearModel; kwargs...)
+function fix_domains(m::PODNonlinearModel; relaxed=false, kwargs...)
 
     if isempty(m.sol_incumb_lb)
-        return m.l_var_tight, m.u_var_tight
+        return m.l_var_orig, m.u_var_orig
     end
 
-    l_var = copy(m.l_var_tight)
-    u_var = copy(m.u_var_tight)
+    l_var = copy(m.l_var_orig)
+    u_var = copy(m.u_var_orig)
     for i in 1:m.num_var_orig
-        if i in m.var_discretization_mip
+        if i in m.var_discretization_mip #&& !relaxed
             point = m.sol_incumb_lb[i]
             for j in 1:length(m.discretization[i])
                 if point >= (m.discretization[i][j] - m.tol) && (point <= m.discretization[i][j+1] + m.tol)
@@ -313,9 +313,12 @@ function fix_domains(m::PODNonlinearModel; kwargs...)
                     break
                 end
             end
-        elseif m.var_type_orig[i] == :Bin || m.var_type_orig[i] == :Int
-            l_var[i] = round(m.sol_incumb_lb[i]) - m.tol
-            u_var[i] = round(m.sol_incumb_lb[i]) + m.tol
+        elseif m.var_type_orig[i] == :Bin
+            relaxed ? l_var[i] = 0.0 - m.tol_fea : l_var[i] = round(m.sol_incumb_lb[i]) - m.tol_fea
+            relaxed ? u_var[i] = 1.0 + m.tol_fea : u_var[i] = round(m.sol_incumb_lb[i]) + m.tol_fea
+        elseif m.var_type_orig[i] == :Int
+            l_var[i] = round(m.sol_incumb_lb[i]) - m.tol_fea
+            u_var[i] = round(m.sol_incumb_lb[i]) + m.tol_fea
         end
     end
 

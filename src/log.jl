@@ -44,6 +44,7 @@ function logging_summary(m::PODNonlinearModel)
         println("maximum solution time = ", m.timeout)
         println("maximum iterations =  ", m.maxiter)
         @printf "relative optimality gap criteria = %.5f (%.4f %%)\n" m.rel_gap (m.rel_gap*100)
+        println("detected linear lifting terms = $(length(m.linear_terms))")
         println("detected nonlinear terms = $(length(m.nonlinear_terms))")
         println("number of variables involved in nonlinear terms = $(length(m.all_nonlinear_vars))")
         println("number of selected variables to discretize = $(length(m.var_discretization_mip))")
@@ -64,7 +65,6 @@ function logging_summary(m::PODNonlinearModel)
 end
 
 function logging_head(m::PODNonlinearModel)
-	@show m.logs[:time_left]
 	if m.logs[:time_left] < Inf
 		print_with_color(:light_yellow, " | NLP           | MIP           || Objective     | Bound         | GAP\%          | CLOCK         | TIME LEFT     | Iter   \n")
 	else
@@ -88,6 +88,7 @@ function logging_row_entry(m::PODNonlinearModel; kwargs...)
     incumb_UB_block = string(" ", round(m.best_obj,4), " " ^ (b_len - length(string(round(m.best_obj, 4)))))
     incumb_LB_block = string(" ", round(m.best_bound,4), " " ^ (b_len - length(string(round(m.best_bound, 4)))))
     GAP_block = string(" ", round(m.best_rel_gap*100,5), " " ^ (b_len - length(string(round(m.best_rel_gap*100,5)))))
+    @show m.logs[:total_time]
     UTIME_block = string(" ", round(m.logs[:total_time],2), "s", " " ^ (b_len - 1 - length(string(round(m.logs[:total_time],2)))))
     if m.logs[:time_left] < Inf
 		LTIME_block = string(" ", round(m.logs[:time_left],2), "s", " " ^ (b_len - 1 - length(string(round(m.logs[:time_left],2)))))

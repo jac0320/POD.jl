@@ -81,13 +81,13 @@ function expr_conversion(m::PODNonlinearModel)
 		m.bounding_obj_mip = expr_linear_to_affine(m.bounding_obj_expr_mip)
 		m.structural_obj = :affine
 	end
-	m.log_level > 99 && println("type :: ", m.structural_obj)
-	m.log_level > 99 && println("lifted ::", m.bounding_obj_expr_mip)
-	m.log_level > 99 && println("coeffs ::", m.bounding_obj_mip[:coefs])
-	m.log_level > 99 && println("vars ::", m.bounding_obj_mip[:vars])
-	m.log_level > 99 && println("sense ::", m.bounding_obj_mip[:sense])
-	m.log_level > 99 && println("rhs ::", m.bounding_obj_mip[:rhs])
-	m.log_level > 99 && println("----------------")
+	m.log_level > 199 && println("type :: ", m.structural_obj)
+	m.log_level > 199 && println("lifted ::", m.bounding_obj_expr_mip)
+	m.log_level > 199 && println("coeffs ::", m.bounding_obj_mip[:coefs])
+	m.log_level > 199 && println("vars ::", m.bounding_obj_mip[:vars])
+	m.log_level > 199 && println("sense ::", m.bounding_obj_mip[:sense])
+	m.log_level > 199 && println("rhs ::", m.bounding_obj_mip[:rhs])
+	m.log_level > 199 && println("----------------")
 
 
 	for i in 1:m.num_constr_orig
@@ -95,13 +95,13 @@ function expr_conversion(m::PODNonlinearModel)
 			m.bounding_constr_mip[i] = expr_linear_to_affine(m.bounding_constr_expr_mip[i])
 			m.structural_constr[i] = :affine
 		end
-		m.log_level > 99 && println("type :: ", m.structural_constr[i])
-		m.log_level > 99 && println("lifted ::", m.bounding_constr_expr_mip[i])
-		m.log_level > 99 && println("coeffs ::", m.bounding_constr_mip[i][:coefs])
-		m.log_level > 99 && println("vars ::", m.bounding_constr_mip[i][:vars])
-		m.log_level > 99 && println("sense ::", m.bounding_constr_mip[i][:sense])
-		m.log_level > 99 && println("rhs ::", m.bounding_constr_mip[i][:rhs])
-		m.log_level > 99 && println("----------------")
+		m.log_level > 199 && println("type :: ", m.structural_constr[i])
+		m.log_level > 199 && println("lifted ::", m.bounding_constr_expr_mip[i])
+		m.log_level > 199 && println("coeffs ::", m.bounding_constr_mip[i][:coefs])
+		m.log_level > 199 && println("vars ::", m.bounding_constr_mip[i][:vars])
+		m.log_level > 199 && println("sense ::", m.bounding_constr_mip[i][:sense])
+		m.log_level > 199 && println("rhs ::", m.bounding_constr_mip[i][:rhs])
+		m.log_level > 199 && println("----------------")
 	end
 
 	return
