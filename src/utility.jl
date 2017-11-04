@@ -294,8 +294,12 @@ and discretizing varibles to the active domain according to lower bound solution
 """
 function fix_domains(m::PODNonlinearModel; kwargs...)
 
-    l_var = copy(m.l_var_orig)
-    u_var = copy(m.u_var_orig)
+    if isempty(m.sol_incumb_lb)
+        return m.l_var_tight, m.u_var_tight
+    end
+
+    l_var = copy(m.l_var_tight)
+    u_var = copy(m.u_var_tight)
     for i in 1:m.num_var_orig
         if i in m.var_discretization_mip
             point = m.sol_incumb_lb[i]

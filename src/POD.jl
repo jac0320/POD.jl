@@ -15,6 +15,7 @@ include("operators.jl")
 # Main Algorithmic Process
 include("presolve.jl")
 include("amp.jl")
+include("heu.jl")
 
 # Convexification method
 include("tmc.jl")

@@ -18,6 +18,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     rel_gap::Float64                                            # Relative optimality gap termination condition
     abs_gap::Float64                                            # Absolute optimality gap termination condition
     tol::Float64                                                # Numerical tol used in the algorithmic process
+    tol_fea::Float64                                            # Feasibility tolerance used in POD
 
     # convexification method tuning
     recognize_convex::Bool                                      # recognize convex expressions in parsing objective functions and constraints
@@ -242,6 +243,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.var_start_orig = Float64[]
         m.constr_type_orig = Symbol[]
         m.constr_expr_orig = Expr[]
+        m.constr_lb_orig = Float64[]
+        m.constr_ub_orig = Float64[]
         m.num_lconstr_updated = 0
         m.num_nlconstr_updated = 0
         m.indexes_lconstr_updated = Int[]
@@ -260,6 +263,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.num_constr_convex = 0
         m.structural_constr = []
         m.bound_sol_history = []
+        m.sol_incumb_lb = []
 
         m.user_parameters = Dict()
 
@@ -304,13 +308,18 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
 
     # Summarize constraints information in original model
     @compat m.constr_type_orig = Array{Symbol}(m.num_constr_orig)
+    m.constr_lb_orig, m.constr_ub_orig = JuMP.constraint(m.d_orig.m)
+    @assert length(m.constr_lb_orig) == m.num_constr_orig
     for i in 1:m.num_constr_orig
         if l_constr[i] > -Inf && u_constr[i] < Inf
             m.constr_type_orig[i] = :(==)
+            @assert m.constr_lb_orig[i] == m.constr_ub_orig[i]
         elseif l_constr[i] > -Inf
             m.constr_type_orig[i] = :(>=)
+            @assert m.constr_ub_orig[i] == Inf
         else
             m.constr_type_orig[i] = :(<=)
+            @assert m.constr_lb_orig[i] == Inf
         end
     end
 
@@ -480,13 +489,14 @@ function local_solve(m::PODNonlinearModel; presolve = false)
 
     convertor = Dict(:Max=>:>, :Min=>:<)
 
-    var_type_screener = [i for i in m.var_type_orig if i in [:Bin, :Int]]
+    # var_type_screener = [i for i in m.var_type_orig if i in [:Bin, :Int]]
+    ((:Bin in m.var_type_orig) || (:Int in m.var_type_orig)) && (has_discrete_var = true)
 
     if presolve
-        if !isempty(var_type_screener) && m.minlp_local_solver != UnsetSolver()
+        if has_discrete_var && m.minlp_local_solver != UnsetSolver()
             local_solve_nlp_model = MathProgBase.NonlinearModel(m.minlp_local_solver)
-        elseif !isempty(var_type_screener) && m.minlp_local_solver == UnsetSolver()
-            warn("Discrete variable detected with no minlp_local_solver indicated. Error can be caused with nlp_local_solver not handling discrete variables.")
+        elseif has_discrete_var && m.minlp_local_solver == UnsetSolver()
+            warn("Discrete variable detected with no minlp_local_solver indicated. Using nlp_local_solver ...")
             local_solve_nlp_model = MathProgBase.NonlinearModel(m.nlp_local_solver)
         else
             local_solve_nlp_model = MathProgBase.NonlinearModel(m.nlp_local_solver)
@@ -500,10 +510,10 @@ function local_solve(m::PODNonlinearModel; presolve = false)
         end
     end
 
-    if presolve == false
-        l_var, u_var = fix_domains(m)
+    if presolve
+        l_var, u_var = m.l_var_tight, m.u_var_tight
     else
-        l_var, u_var = m.l_var_orig, m.u_var_orig
+        l_var, u_var = fix_domains(m)
     end
 
     MathProgBase.loadproblem!(local_solve_nlp_model,
@@ -517,7 +527,7 @@ function local_solve(m::PODNonlinearModel; presolve = false)
                               m.d_orig)
 
     (!m.d_orig.want_hess) && MathProgBase.initialize(m.d_orig, [:Grad,:Jac,:Hess,:HessVec, :ExprGraph]) # Safety scheme for sub-solvers re-initializing the NLPEvaluator
-    (presolve && (:Bin in m.var_type_orig || :Int in m.var_type_orig)) && MathProgBase.setvartype!(local_solve_nlp_model, m.var_type_orig)
+    presolve && has_discrete_var && MathProgBase.setvartype!(local_solve_nlp_model, m.var_type_orig)
     MathProgBase.setwarmstart!(local_solve_nlp_model, m.best_sol[1:m.num_var_orig])
 
     start_local_solve = time()
@@ -543,6 +553,7 @@ function local_solve(m::PODNonlinearModel; presolve = false)
     elseif local_solve_nlp_status in status_reroute
         push!(m.logs[:obj], "-")
         m.status[:local_solve] = :Infeasible
+        m.status[:local_solve] = heu_relaxation_rounding(m)
         return
     elseif local_solve_nlp_status == :Unbounded
         (presolve == true) && warn("[PRESOLVE] NLP local solve is unbounded.")
