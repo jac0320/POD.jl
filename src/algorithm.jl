@@ -489,7 +489,6 @@ function local_solve(m::PODNonlinearModel; presolve = false)
 
     convertor = Dict(:Max=>:>, :Min=>:<)
 
-    # var_type_screener = [i for i in m.var_type_orig if i in [:Bin, :Int]]
     ((:Bin in m.var_type_orig) || (:Int in m.var_type_orig)) && (has_discrete_var = true)
 
     if presolve
