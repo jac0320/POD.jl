@@ -8,6 +8,7 @@ type PODSolver <: MathProgBase.AbstractMathProgSolver
     dev_debug::Bool
     dev_test::Bool
     colorful_pod::Any
+    ws::Bool
 
     log_level::Int
     timeout::Float64
@@ -62,6 +63,7 @@ function PODSolver(;
     dev_debug = false,
     dev_test = false,
     colorful_pod = false,
+    ws = false,
 
     log_level = 1,
     timeout = Inf,
@@ -122,7 +124,7 @@ function PODSolver(;
     end
 
     # Deepcopy the solvers because we may change option values inside POD
-    PODSolver(dev_debug, dev_test, colorful_pod,
+    PODSolver(dev_debug, dev_test, colorful_pod, ws,
         log_level, timeout, maxiter, rel_gap, tol,
         deepcopy(nlp_local_solver),
         deepcopy(minlp_local_solver),
@@ -168,6 +170,7 @@ function MathProgBase.NonlinearModel(s::PODSolver)
     dev_test = s.dev_test
     dev_debug = s.dev_debug
     colorful_pod = s.colorful_pod
+    ws = s.ws
 
     log_level = s.log_level
     timeout = s.timeout
@@ -215,7 +218,7 @@ function MathProgBase.NonlinearModel(s::PODSolver)
 
     user_parameters = s.user_parameters
 
-    return PODNonlinearModel(dev_debug, dev_test, colorful_pod,
+    return PODNonlinearModel(dev_debug, dev_test, colorful_pod, ws,
                             log_level, timeout, maxiter, rel_gap, tol,
                             nlp_local_solver,
                             minlp_local_solver,

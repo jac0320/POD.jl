@@ -7,6 +7,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     dev_test::Bool                                              # Turn on for testing new code with
     colorful_pod::Any                                           # Turn on for a color solver
     mip_license::Any                                            # Granted solver identifier
+    ws::Bool
 
     # Temporary internal place-holder for testing differnt things
     dump::Any
@@ -41,10 +42,10 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
 
     # parameters used to control convhull formulation
     convexhull_sweep_limit::Int                                 # Contoller for formulation density
-    convhull_formulation_sos2::Bool                                   # Convex hull formulation with SOS-2 representation (numerically best so far)
-    convhull_formulation_sos2aux::Bool                                # Speical SOS-2 formulation that utilized auxilary variables
-    convhull_formulation_facet::Bool                                  # Use the facets contraint generated from PORTA
-    convhull_formulation_minib::Bool                                  # Use minimum formulation with boundary cuts
+    convhull_formulation_sos2::Bool                             # Convex hull formulation with SOS-2 representation (numerically best so far)
+    convhull_formulation_sos2aux::Bool                          # Speical SOS-2 formulation that utilized auxilary variables
+    convhull_formulation_facet::Bool                            # Use the facets contraint generated from PORTA
+    convhull_formulation_minib::Bool                            # Use minimum formulation with boundary cuts
 
     # parameters related to presolving
     presolve_track_time::Bool                                   # Account presolve time for total time usage
@@ -129,6 +130,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     discretization::Dict{Any,Any}                               # Discretization points keyed by the variables
     var_discretization_mip::Vector{Any}                         # Variables on which discretization is performed
     sol_incumb_lb::Vector{Float64}                              # Incumbent lower bounding solution
+    sol_lb_pool::Dict{Any, Any}                                 # A pool of solutions from solving model_mip
     l_var_tight::Vector{Float64}                                # Tightened variable upper bounds
     u_var_tight::Vector{Float64}                                # Tightened variable Lower Bounds
 
@@ -138,7 +140,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     best_sol::Vector{Float64}                                   # Best feasible solution
     best_bound_sol::Vector{Float64}                             # Best bound solution
     best_rel_gap::Float64                                       # Relative optimality gap = |best_bound - best_obj|/|best_obj|
-    bound_sol_history::Vector{Vector{Float64}}                  # History of bounding solutions limited by parameter discretization_consecutive_forbid
+    sol_lb_history::Vector{Vector{Float64}}                  # History of bounding solutions limited by parameter discretization_consecutive_forbid
     final_soln::Vector{Float64}                                 # Final solution
 
     # Logging information and status
@@ -147,7 +149,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     pod_status::Symbol                                          # Current POD status
 
     # constructor
-    function PODNonlinearModel(dev_debug, dev_test,colorful_pod,
+    function PODNonlinearModel(dev_debug, dev_test,colorful_pod, ws,
                                 log_level, timeout, maxiter, rel_gap, tol,
                                 nlp_local_solver,
                                 minlp_local_solver,
@@ -187,6 +189,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.colorful_pod = colorful_pod
         m.dev_debug = dev_debug
         m.dev_test = dev_test
+        m.ws = ws
 
         m.log_level = log_level
         m.timeout = timeout
@@ -245,6 +248,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.num_lconstr_updated = 0
         m.num_nlconstr_updated = 0
         m.indexes_lconstr_updated = Int[]
+        m.sol_incumb_lb = []
 
         m.linear_terms = Dict()
         m.nonlinear_terms = Dict()
@@ -259,7 +263,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.num_var_discretization_mip = 0
         m.num_constr_convex = 0
         m.structural_constr = []
-        m.bound_sol_history = []
+        m.sol_lb_history = []
+        m.sol_lb_pool = Dict()
 
         m.user_parameters = Dict()
 
@@ -340,7 +345,7 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
     initialize_discretization(m)    # Initialize discretization dictionary
 
     # Setup the memory space for recording bounding solutions
-    m.bound_sol_history = Vector{Vector{Float64}}(m.discretization_consecutive_forbid)
+    m.sol_lb_history = Vector{Vector{Float64}}(m.discretization_consecutive_forbid)
 
     # Record the initial solution from the warmstarting value, if any
     m.best_sol = m.d_orig.m.colVal
@@ -580,7 +585,7 @@ function bounding_solve(m::PODNonlinearModel; kwargs...)
     if status in status_solved
         (status == :Optimal) ? candidate_bound = m.model_mip.objVal : candidate_bound = m.model_mip.objBound
         candidate_bound_sol = [round.(getvalue(Variable(m.model_mip, i)), 6) for i in 1:m.num_var_orig+m.num_var_linear_lifted_mip+m.num_var_nonlinear_lifted_mip]
-        (m.discretization_consecutive_forbid>0) && (m.bound_sol_history[mod(m.logs[:n_iter]-1, m.discretization_consecutive_forbid)+1] = copy(candidate_bound_sol)) # Requires proper offseting
+        (m.discretization_consecutive_forbid>0) && (m.sol_lb_history[mod(m.logs[:n_iter]-1, m.discretization_consecutive_forbid)+1] = copy(candidate_bound_sol)) # Requires proper offseting
         push!(m.logs[:bound], candidate_bound)
         if eval(convertor[m.sense_orig])(candidate_bound, m.best_bound + 1e-10)
             m.best_bound = candidate_bound
@@ -589,6 +594,7 @@ function bounding_solve(m::PODNonlinearModel; kwargs...)
             m.status[:bounding_solve] = status
             m.status[:bound] = :Detected
         end
+        m.ws && collect_pool_info(m)    # Newly added: collect details sub-optimal solution
     elseif status in status_reroute
         push!(m.logs[:bound], "-")
         m.status[:bounding_solve] = status

@@ -278,10 +278,10 @@ function check_solution_history(m::PODNonlinearModel, ind::Int)
 
     (m.logs[:n_iter] < m.discretization_consecutive_forbid) && return false
 
-    sol_val = m.bound_sol_history[mod(m.logs[:n_iter]-1, m.discretization_consecutive_forbid)+1][ind]
+    sol_val = m.sol_lb_history[mod(m.logs[:n_iter]-1, m.discretization_consecutive_forbid)+1][ind]
     for i in 1:(m.discretization_consecutive_forbid-1)
         search_pos = mod(m.logs[:n_iter]-1-i, m.discretization_consecutive_forbid)+1
-        !isapprox(sol_val, m.bound_sol_history[search_pos][ind]; atol=m.discretization_rel_width_tol) && return false
+        !isapprox(sol_val, m.sol_lb_history[search_pos][ind]; atol=m.discretization_rel_width_tol) && return false
     end
     return true
 end
@@ -508,7 +508,7 @@ end
 
 function print_iis_gurobi(m::JuMP.Model)
 
-    grb = MathProgBase.getrawsolver(internalmodel(m))
+    grb = MathProgBase.getrawsolver(internalModel(m))
     Gurobi.computeIIS(grb)
     numconstr = Gurobi.num_constrs(grb)
     numvar = Gurobi.num_vars(grb)
@@ -538,4 +538,86 @@ function print_iis_gurobi(m::JuMP.Model)
     end
 
     return
+end
+
+
+function collect_pool_info(m::PODNonlinearModel)
+
+    m.mip_solver_identifier in ["Gurobi", "CPLEX"] && error("Not supporting MILP solvers other than CPLEX/Gurobi") # Only feaible with Gurobi solver
+
+    s = Dict()
+
+    # Initialization of the pool
+    s[:cnt] = Gurobi.get_intattr(m.model_mip.internalModel.inner, "SolCount")
+    s[:len] = length(m.model_mip.colVal)
+    s[:vars] = [i for i in m.all_nonlinear_vars if length(m.discretization[i]) > 2]
+    s[:sol] = Vector{Vector}(s[:cnt])
+    s[:obj] = Vector{Float64}(s[:cnt])
+    s[:disc] = Vector{Dict}(s[:cnt])
+    s[:stat] = Vector{Symbol}(s[:cnt])
+    s[:cutp] = Dict()
+
+    println("POOL size = $(s[:cnt])")
+    # Collect Solution and corresponding objective values
+    for i in 1:s[:cnt]
+        if m.mip_solver_identifier == "Gurobi"
+            Gurobi.set_int_param!(m.model_mip.internalModel.inner, "SolutionNumber", i-1)
+            s[:sol][i] = Gurobi.get_dblattrarray(m.model_mip.internalModel.inner, "Xn", 1, s[:len])
+            s[:obj][i] = Gurobi.get_dblattr(m.model_mip.internalModel.inner, "PoolObjVal")
+        end
+        println("\tPOOL solution obj = $(s[:obj][i])")
+        s[:disc][i] = Dict(j=>get_active_partition_idx(m,s[:sol][i][j],j) for j in s[:vars])
+        for j in s[:vars]
+            println("\t\tVAR$(j) :: VAL=$(round(s[:sol][i][j],4))  PART=$(s[:disc][i][j])")
+        end
+        s[:stat][i] = :Deactivated
+        if i == 1
+            s[:cutp] = Dict()
+            for v in s[:vars]
+                vpcnt = length(m.discretization[v]) - 1
+                chosenp = track_new_partition_idx(m, v, s[:sol][i][v], s[:disc][i][v])
+                s[:cutp][v] = [i for i in 1:vpcnt if !(i in chosenp)]
+            end
+        end
+    end
+
+    m.sol_lb_pool = s
+
+    return
+end
+
+function track_new_partition_idx(m::PODNonlinearModel, idx::Int, val::Float64, acp::Int)
+
+    pcnt = length(m.discretization[idx]) - 1
+    newpidx = []  # Tracks the newly constructed partition idxes
+    pcnt == 1 && return [1;]    # Still keep non-discretizing variables
+    if acp == 1
+        return newpidx = [1,2;]
+    elseif acp == pcnt
+        return newpidx = [pcnt-1,pcnt;]
+    else
+        tlb = m.discretization[idx][acp-1]
+        tub = m.discretization[idx][acp+1]
+        if abs(val-tlb) == abs(val-tub)
+            return [acp-1, acp, acp+1;]
+        elseif abs(val-tlb) > abs(val-tub)
+            return [acp-1, acp;]
+        elseif abs(val-tlb) < abs(val-tub)
+            return [acp, acp+1;]
+        end
+    end
+
+    return
+end
+
+function get_active_partition_idx(m::PODNonlinearModel, val::Float64, idx::Int)
+
+    for j in 1:length(m.discretization[idx])-1
+        if val > m.discretization[idx][j] - m.tol && val < m.discretization[idx][j+1] + m.tol
+            return j
+        end
+    end
+
+    warn("Activate parition not found [VAR$(idx)]. Returning default partition 1.")
+    return 1
 end

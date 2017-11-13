@@ -30,6 +30,28 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
         end
     end
 
+    # Construct additional cuts
+    if m.ws && !isempty(m.sol_incumb_lb)
+        m.sol_lb_pool
+        function cutoffpartitions(cb)
+            obj = MathProgBase.cbgetobj(cb)
+            for i in 2:m.sol_lb_pool[:cnt]
+                cutv2p = Dict()
+                if obj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Deactivated
+                    cut = true
+                    for v in 1:m.sol_lb_pool[:vars]
+                        p = get_active_partition_idx(m, getvalue(Variable(m.model_mip, v)), v)
+                        p in m.sol_lb_pool[:cutp] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : cut = false
+                        !cut && break
+                    end
+                    cut && @lazyconstraint(m.model_mip, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
+                    println("LAZY CUT added to eliminate partition combination $(cutv2p)")
+                end
+            end
+        end
+        addlazycallback(m.model_mip, cutoffpartitions)
+    end
+
     return
 end
 
@@ -141,6 +163,12 @@ function amp_convhull_α(m::PODNonlinearModel, ml_indices::Any, α::Dict, dim::T
                 partition_cnt = length(discretization[i]) - 1
                 α[i] = @variable(m.model_mip, [1:partition_cnt], Bin, basename="A$(i)")
                 @constraint(m.model_mip, sum(α[i]) == 1)
+                if m.ws && !isempty(m.sol_incumb_lb)
+                    active_j = get_active_partition_idx(m, m.sol_incumb_lb[i], i)
+                    for j = 1:partition_cnt-1
+                        j == active_j ? setvalue(α[i][j], 1.0) : setvalue(α[i][j], 0.0)
+                    end
+                end
             end
         end
     end

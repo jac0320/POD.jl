@@ -98,6 +98,13 @@ function amp_post_vars(m::PODNonlinearModel; kwargs...)
         (u_var[i] < Inf) && (setupperbound(x[i], u_var[i]))   # Changed to tight bound, if no bound tightening is performed, will be just .u_var_orig
     end
 
+    # Warm start the initial solution
+    if !isempty(m.sol_incumb_lb) && m.ws
+        for i in 1:m.num_var_orig
+            setvalue(x[i], m.sol_incumb_lb[i])
+        end
+    end
+
     return
 end
 
