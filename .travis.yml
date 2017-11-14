@@ -26,6 +26,7 @@ before_install:
   - julia -e 'Pkg.update()' #make sure we get the latest version of METADATA
   - julia -e 'if !("Coverage" in keys(Pkg.installed())) Pkg.add("Coverage") end'
   - julia -e 'if !("Documenter" in keys(Pkg.installed())) Pkg.add("Documenter") end'
+  - julia -e 'if !("Gurobi" in keys(Pkg.installed())) Pkg.add("Gurobi") end'
 
 script:  # core code tests
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
