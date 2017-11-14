@@ -38,8 +38,10 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
             chosenp = track_new_partition_idx(discretization, v, m.sol_lb_pool[:sol][1][v], m.sol_lb_pool[:disc][1][v])
             m.sol_lb_pool[:cutp][v] = [i for i in 1:vpcnt if !(i in chosenp)]
         end
-        # Construct addition cuts
-        function cutoffpartitions(cb)
+        # Add global cuts
+        amp_convhull_global_cuts(m)
+        # Add local cuts
+        function localcut(cb)
             # obj = MathProgBase.cbgetobj(cb)   # This doesn't work through Gurobi
             vcnt = m.num_var_orig + m.num_var_linear_lifted_mip + m.num_var_nonlinear_lifted_mip   # Necessary Variable cnt of the bounding model
             evalobj = eval_objective(m, svec=[getvalue(Variable(m.model_mip, i)) for i in 1:vcnt])
@@ -47,20 +49,20 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
             for i in 2:m.sol_lb_pool[:cnt]
                 cutv2p = Dict()
                 if evalobj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Deactivated
-                    pcut = true
+                    lcut = true
                     for v in m.sol_lb_pool[:vars]
-                        m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : pcut = false
-                        pcut && println("CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
-                        pcut || println("CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
-                        pcut || break
+                        m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : lcut = false
+                        lcut && println("CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                        lcut || println("CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                        lcut || break
                     end
-                    pcut && @lazyconstraint(cb, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
+                    lcut && @lazyconstraint(cb, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
                     m.sol_lb_pool[:stat][i] = :Activated
                     println("!LAZY added based on SOL $(i)!")
                 end
             end
         end
-        addlazycallback(m.model_mip, cutoffpartitions)
+        addlazycallback(m.model_mip, localcut)
     end
 
     return
@@ -321,6 +323,27 @@ function valid_inequalities(m::PODNonlinearModel, discretization::Dict, λ::Dict
     end
 
     error("Must indicate a choice of convex hull formulation. ?(minib, sos2, sos2aux, facet)")
+    return
+end
+
+function amp_convhull_global_cuts(m::PODNonlinearModel)
+
+    for i in 2:m.sol_lb_pool[:cnt]
+        cutv2p = Dict()
+        if m.best_obj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Deactivated
+            gcut = true
+            for v in m.sol_lb_pool[:vars]
+                m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : lcut = false
+                gcut && println("L-CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                gcut || println("L-CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                gcut || break
+            end
+            lcut && @constraint(m.model_mip, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
+            m.sol_lb_pool[:stat][i] == :Activated
+            println("!GLOBAL added based on SOL $(i)!")
+        end
+    end
+
     return
 end
 
