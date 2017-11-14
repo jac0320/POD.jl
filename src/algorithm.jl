@@ -7,7 +7,9 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     dev_test::Bool                                              # Turn on for testing new code with
     colorful_pod::Any                                           # Turn on for a color solver
     mip_license::Any                                            # Granted solver identifier
-    ws::Bool
+    warm_start_mip::Bool                                        # Warm start
+    ac::Bool                                                    # Add cuts
+    branch_priority_mip::Vector{Int}                            # Branching priority
 
     # Temporary internal place-holder for testing differnt things
     dump::Any
@@ -149,7 +151,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     pod_status::Symbol                                          # Current POD status
 
     # constructor
-    function PODNonlinearModel(dev_debug, dev_test,colorful_pod, ws,
+    function PODNonlinearModel(dev_debug, dev_test,colorful_pod, warm_start_mip, ac,
                                 log_level, timeout, maxiter, rel_gap, tol,
                                 nlp_local_solver,
                                 minlp_local_solver,
@@ -189,7 +191,12 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.colorful_pod = colorful_pod
         m.dev_debug = dev_debug
         m.dev_test = dev_test
-        m.ws = ws
+
+        # Experimental
+        m.warm_start_mip = warm_start_mip
+        m.ac = ac
+        m.branch_priority_mip = []
+        # Experimental
 
         m.log_level = log_level
         m.timeout = timeout
@@ -573,8 +580,11 @@ function bounding_solve(m::PODNonlinearModel; kwargs...)
     update_mip_time_limit(m)
     update_boundstop_options(m)
     start_bounding_solve = time()
+    JuMP.build(m.model_mip)
+    # m.warm_start_mip && adjust_branch_priority(m)
     status = solve(m.model_mip, suppress_warnings=true)
     cputime_bounding_solve = time() - start_bounding_solve
+    # m.warm_start_mip && reset_branch_priority(m)
     m.logs[:total_time] += cputime_bounding_solve
     m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
     # ================= Solve End ================ #
@@ -594,7 +604,7 @@ function bounding_solve(m::PODNonlinearModel; kwargs...)
             m.status[:bounding_solve] = status
             m.status[:bound] = :Detected
         end
-        m.ws && collect_pool_info(m)    # Newly added: collect details sub-optimal solution
+        true && collect_pool_info(m)    # Newly added: collect details sub-optimal solution
     elseif status in status_reroute
         push!(m.logs[:bound], "-")
         m.status[:bounding_solve] = status

@@ -543,7 +543,10 @@ end
 
 function collect_pool_info(m::PODNonlinearModel)
 
-    m.mip_solver_identifier in ["Gurobi", "CPLEX"] && error("Not supporting MILP solvers other than CPLEX/Gurobi") # Only feaible with Gurobi solver
+    if !(m.mip_solver_identifier in ["Gurobi", "CPLEX"])
+        warn("Unsupported MILP solver for collecting solution pool") # Only feaible with Gurobi solver
+        return Dict()
+    end
 
     s = Dict()
 
@@ -555,7 +558,6 @@ function collect_pool_info(m::PODNonlinearModel)
     s[:obj] = Vector{Float64}(s[:cnt])
     s[:disc] = Vector{Dict}(s[:cnt])
     s[:stat] = Vector{Symbol}(s[:cnt])
-    s[:cutp] = Dict()
 
     println("POOL size = $(s[:cnt])")
     # Collect Solution and corresponding objective values
@@ -564,21 +566,15 @@ function collect_pool_info(m::PODNonlinearModel)
             Gurobi.set_int_param!(m.model_mip.internalModel.inner, "SolutionNumber", i-1)
             s[:sol][i] = Gurobi.get_dblattrarray(m.model_mip.internalModel.inner, "Xn", 1, s[:len])
             s[:obj][i] = Gurobi.get_dblattr(m.model_mip.internalModel.inner, "PoolObjVal")
+        else
+            error("No support for other MILP sub-solvers")
         end
         println("\tPOOL solution obj = $(s[:obj][i])")
-        s[:disc][i] = Dict(j=>get_active_partition_idx(m,s[:sol][i][j],j) for j in s[:vars])
+        s[:disc][i] = Dict(j=>get_active_partition_idx(m.discretization,s[:sol][i][j],j) for j in s[:vars])
         for j in s[:vars]
-            println("\t\tVAR$(j) :: VAL=$(round(s[:sol][i][j],4))  PART=$(s[:disc][i][j])")
+            # println("\t\tVAR$(j) :: VAL=$(round(s[:sol][i][j],4))  PART=$(s[:disc][i][j])")
         end
         s[:stat][i] = :Deactivated
-        if i == 1
-            s[:cutp] = Dict()
-            for v in s[:vars]
-                vpcnt = length(m.discretization[v]) - 1
-                chosenp = track_new_partition_idx(m, v, s[:sol][i][v], s[:disc][i][v])
-                s[:cutp][v] = [i for i in 1:vpcnt if !(i in chosenp)]
-            end
-        end
     end
 
     m.sol_lb_pool = s
@@ -586,18 +582,18 @@ function collect_pool_info(m::PODNonlinearModel)
     return
 end
 
-function track_new_partition_idx(m::PODNonlinearModel, idx::Int, val::Float64, acp::Int)
+function track_new_partition_idx(discretization::Dict, idx::Int, val::Float64, acp::Int)
 
-    pcnt = length(m.discretization[idx]) - 1
-    newpidx = []  # Tracks the newly constructed partition idxes
+    pcnt = length(discretization[idx]) - 1
+    newpidx = []                # Tracks the newly constructed partition idxes
     pcnt == 1 && return [1;]    # Still keep non-discretizing variables
     if acp == 1
         return newpidx = [1,2;]
     elseif acp == pcnt
         return newpidx = [pcnt-1,pcnt;]
     else
-        tlb = m.discretization[idx][acp-1]
-        tub = m.discretization[idx][acp+1]
+        tlb = discretization[idx][acp-1]
+        tub = discretization[idx][acp+1]
         if abs(val-tlb) == abs(val-tub)
             return [acp-1, acp, acp+1;]
         elseif abs(val-tlb) > abs(val-tub)
@@ -610,14 +606,50 @@ function track_new_partition_idx(m::PODNonlinearModel, idx::Int, val::Float64, a
     return
 end
 
-function get_active_partition_idx(m::PODNonlinearModel, val::Float64, idx::Int)
+function get_active_partition_idx(discretization::Dict, val::Float64, idx::Int; tol=1e-6)
 
-    for j in 1:length(m.discretization[idx])-1
-        if val > m.discretization[idx][j] - m.tol && val < m.discretization[idx][j+1] + m.tol
+    for j in 1:length(discretization[idx])-1
+        if val > discretization[idx][j] - tol && val < discretization[idx][j+1] + tol
             return j
         end
     end
 
     warn("Activate parition not found [VAR$(idx)]. Returning default partition 1.")
     return 1
+end
+
+function eval_objective(m::PODNonlinearModel; svec::Vector=[])
+
+    isempty(svec) ? svec = m.sol_incumb_lb : svec = svec
+    m.sense_orig == :Min ? obj = Inf : obj=-Inf
+
+    if m.structural_obj == :affine
+        obj = m.bounding_obj_mip[:rhs]
+        for i in 1:m.bounding_obj_mip[:cnt]
+            obj += m.bounding_obj_mip[:coefs][i]*svec[m.bounding_obj_mip[:vars][i].args[2]]
+        end
+    elseif m.structural_obj == :convex
+        error("need implementation for local objective function evaluation for convex form")
+    else
+        error("Unknown structural obj type $(m.structural_obj)")
+    end
+
+    return obj
+end
+
+function adjust_branch_priority(m::PODNonlinearModel)
+
+    isempty(m.branch_priority_mip) && return # By default
+    m.mip_solver_identifier != "Gurobi" && return
+    !m.model_mip.internalModelLoaded && return
+
+    len = length(m.model_mip.colVal)
+    Gurobi.set_intattrarray!(m.model_mip.internalModel.inner, "BranchPriority", 1, len, [i in m.branch_priority_mip ? 1 : 0 for i in 1:len])
+
+    return
+end
+
+function reset_branch_priority(m::PODNonlinearModel)
+    m.branch_priority_mip = []
+    return
 end

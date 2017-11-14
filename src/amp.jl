@@ -99,7 +99,7 @@ function amp_post_vars(m::PODNonlinearModel; kwargs...)
     end
 
     # Warm start the initial solution
-    if !isempty(m.sol_incumb_lb) && m.ws
+    if !isempty(m.sol_incumb_lb) && m.warm_start_mip
         for i in 1:m.num_var_orig
             setvalue(x[i], m.sol_incumb_lb[i])
         end

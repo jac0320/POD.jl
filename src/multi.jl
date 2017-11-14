@@ -31,21 +31,32 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
     end
 
     # Construct additional cuts
-    if m.ws && !isempty(m.sol_incumb_lb)
-        m.sol_lb_pool
+    if m.ac && !isempty(m.sol_incumb_lb)
+        m.sol_lb_pool[:cutp] = Dict()
+        for v in m.sol_lb_pool[:vars]
+            vpcnt = length(discretization[v]) - 1
+            chosenp = track_new_partition_idx(discretization, v, m.sol_lb_pool[:sol][1][v], m.sol_lb_pool[:disc][1][v])
+            m.sol_lb_pool[:cutp][v] = [i for i in 1:vpcnt if !(i in chosenp)]
+        end
+        # Construct addition cuts
         function cutoffpartitions(cb)
-            obj = MathProgBase.cbgetobj(cb)
+            # obj = MathProgBase.cbgetobj(cb)   # This doesn't work through Gurobi
+            vcnt = m.num_var_orig + m.num_var_linear_lifted_mip + m.num_var_nonlinear_lifted_mip   # Necessary Variable cnt of the bounding model
+            evalobj = eval_objective(m, svec=[getvalue(Variable(m.model_mip, i)) for i in 1:vcnt])
+            println("Incumbent MIP solution objective = $(evalobj)")
             for i in 2:m.sol_lb_pool[:cnt]
                 cutv2p = Dict()
-                if obj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Deactivated
-                    cut = true
-                    for v in 1:m.sol_lb_pool[:vars]
-                        p = get_active_partition_idx(m, getvalue(Variable(m.model_mip, v)), v)
-                        p in m.sol_lb_pool[:cutp] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : cut = false
-                        !cut && break
+                if evalobj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Deactivated
+                    pcut = true
+                    for v in m.sol_lb_pool[:vars]
+                        m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : pcut = false
+                        pcut && println("CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                        pcut || println("CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                        pcut || break
                     end
-                    cut && @lazyconstraint(m.model_mip, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
-                    println("LAZY CUT added to eliminate partition combination $(cutv2p)")
+                    pcut && @lazyconstraint(cb, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
+                    m.sol_lb_pool[:stat][i] = :Activated
+                    println("!LAZY added based on SOL $(i)!")
                 end
             end
         end
@@ -163,8 +174,9 @@ function amp_convhull_α(m::PODNonlinearModel, ml_indices::Any, α::Dict, dim::T
                 partition_cnt = length(discretization[i]) - 1
                 α[i] = @variable(m.model_mip, [1:partition_cnt], Bin, basename="A$(i)")
                 @constraint(m.model_mip, sum(α[i]) == 1)
-                if m.ws && !isempty(m.sol_incumb_lb)
-                    active_j = get_active_partition_idx(m, m.sol_incumb_lb[i], i)
+                if m.warm_start_mip && !isempty(m.sol_incumb_lb)
+                    active_j = get_active_partition_idx(discretization, m.sol_incumb_lb[i], i)
+                    m.branch_priority_mip = [m.branch_priority_mip, [α[i][j].col for j in track_new_partition_idx(discretization, i, m.sol_incumb_lb[i], active_j)];]
                     for j = 1:partition_cnt-1
                         j == active_j ? setvalue(α[i][j], 1.0) : setvalue(α[i][j], 0.0)
                     end
