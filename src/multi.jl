@@ -31,7 +31,7 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
     end
 
     # Construct additional cuts
-    if m.ac && !isempty(m.sol_incumb_lb)
+    if m.no_good_cuts && !isempty(m.sol_incumb_lb)
         m.sol_lb_pool[:cutp] = Dict()
         for v in m.sol_lb_pool[:vars]
             vpcnt = length(discretization[v]) - 1
@@ -39,7 +39,7 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
             m.sol_lb_pool[:cutp][v] = [i for i in 1:vpcnt if !(i in chosenp)]
         end
         # Add global cuts
-        amp_convhull_global_cuts(m)
+        amp_convhull_global_cuts(m, α)
         # Add local cuts
         function localcut(cb)
             # obj = MathProgBase.cbgetobj(cb)   # This doesn't work through Gurobi
@@ -52,13 +52,13 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
                     lcut = true
                     for v in m.sol_lb_pool[:vars]
                         m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : lcut = false
-                        lcut && println("CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
-                        lcut || println("CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                        # lcut && println("CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                        # lcut || println("CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
                         lcut || break
                     end
                     lcut && @lazyconstraint(cb, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
-                    m.sol_lb_pool[:stat][i] = :Activated
-                    println("!LAZY added based on SOL $(i)!")
+                    lcut && (m.sol_lb_pool[:stat][i] = :Activated)
+                    lcut && println("!LAZY added based on SOL-$(i) OBJ=$(m.sol_lb_pool[:obj][i])!")
                 end
             end
         end
@@ -177,11 +177,12 @@ function amp_convhull_α(m::PODNonlinearModel, ml_indices::Any, α::Dict, dim::T
                 α[i] = @variable(m.model_mip, [1:partition_cnt], Bin, basename="A$(i)")
                 @constraint(m.model_mip, sum(α[i]) == 1)
                 if m.warm_start_mip && !isempty(m.sol_incumb_lb)
-                    active_j = get_active_partition_idx(discretization, m.sol_incumb_lb[i], i)
-                    m.branch_priority_mip = [m.branch_priority_mip, [α[i][j].col for j in track_new_partition_idx(discretization, i, m.sol_incumb_lb[i], active_j)];]
-                    for j = 1:partition_cnt-1
-                        j == active_j ? setvalue(α[i][j], 1.0) : setvalue(α[i][j], 0.0)
-                    end
+                    # active_j = get_active_partition_idx(discretization, m.sol_incumb_lb[i], i)
+                    # m.branch_priority_mip = [m.branch_priority_mip, [α[i][j].col for j in track_new_partition_idx(discretization, i, m.sol_incumb_lb[i], active_j)];]
+                    # for j = 1:partition_cnt
+                    #     j == active_j ? setvalue(α[i][j], 1.0) : setvalue(α[i][j], 0.0)
+                    # end
+                    warmstart_convhull_α(m, α, discretization)
                 end
             end
         end
@@ -326,21 +327,48 @@ function valid_inequalities(m::PODNonlinearModel, discretization::Dict, λ::Dict
     return
 end
 
-function amp_convhull_global_cuts(m::PODNonlinearModel)
+function amp_convhull_global_cuts(m::PODNonlinearModel, α)
+
+    println("Global Incumbent solution objective = $(m.best_obj)")
 
     for i in 2:m.sol_lb_pool[:cnt]
         cutv2p = Dict()
         if m.best_obj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Deactivated
             gcut = true
             for v in m.sol_lb_pool[:vars]
-                m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : lcut = false
-                gcut && println("L-CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
-                gcut || println("L-CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : gcut = false
+                # gcut && println("G-CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
+                # gcut || println("G-CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
                 gcut || break
             end
-            lcut && @constraint(m.model_mip, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
-            m.sol_lb_pool[:stat][i] == :Activated
-            println("!GLOBAL added based on SOL $(i)!")
+            gcut && @constraint(m.model_mip, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
+            gcut && (m.sol_lb_pool[:stat][i] = :Activated)
+            gcut && println("!GLOBAL CUT added based on SOL-$(i) OBJ=$(m.sol_lb_pool[:obj][i])!")
+        end
+    end
+
+    return
+end
+
+function warmstart_convhull_α(m::PODNonlinearModel, α::Dict, discretization::Dict)
+
+    if m.sol_lb_pool[:cnt] >= 2
+        for i in m.sol_lb_pool[:cnt]:-1:2
+            gcut = true
+            for v in m.sol_lb_pool[:vars]
+                !(m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v]) && (gcut = false)
+                gcut || break
+            end
+            if gcut
+                for v in m.sol_lb_pool[:vars]
+                    partition_cnt = length(discretization[v])-1
+                    active_j = get_active_partition_idx(discretization, m.sol_lb_pool[:sol][i][v], v)
+                    for j = 1:partition_cnt
+                        j == active_j ? setvalue(α[v][j], 1.0) : setvalue(α[v][j], 0.0)
+                    end
+                end
+                println("!WARM STARTING! based on SOL-$(i) WS-OBJ=$(m.sol_lb_pool[:obj][i])")
+            end
         end
     end
 

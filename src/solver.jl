@@ -9,7 +9,7 @@ type PODSolver <: MathProgBase.AbstractMathProgSolver
     dev_test::Bool
     colorful_pod::Any
     warm_start_mip::Bool
-    ac::Bool
+    no_good_cuts::Bool
 
     log_level::Int
     timeout::Float64
@@ -65,7 +65,7 @@ function PODSolver(;
     dev_test = false,
     colorful_pod = false,
     warm_start_mip = false,
-    ac = false,
+    no_good_cuts = false,
 
     log_level = 1,
     timeout = Inf,
@@ -126,7 +126,7 @@ function PODSolver(;
     end
 
     # Deepcopy the solvers because we may change option values inside POD
-    PODSolver(dev_debug, dev_test, colorful_pod, warm_start_mip, ac,
+    PODSolver(dev_debug, dev_test, colorful_pod, warm_start_mip, no_good_cuts,
         log_level, timeout, maxiter, rel_gap, tol,
         deepcopy(nlp_local_solver),
         deepcopy(minlp_local_solver),
@@ -173,7 +173,7 @@ function MathProgBase.NonlinearModel(s::PODSolver)
     dev_debug = s.dev_debug
     colorful_pod = s.colorful_pod
     warm_start_mip = s.warm_start_mip
-    ac = s.ac
+    no_good_cuts = s.no_good_cuts
 
     log_level = s.log_level
     timeout = s.timeout
@@ -221,7 +221,7 @@ function MathProgBase.NonlinearModel(s::PODSolver)
 
     user_parameters = s.user_parameters
 
-    return PODNonlinearModel(dev_debug, dev_test, colorful_pod, warm_start_mip, ac,
+    return PODNonlinearModel(dev_debug, dev_test, colorful_pod, warm_start_mip, no_good_cuts,
                             log_level, timeout, maxiter, rel_gap, tol,
                             nlp_local_solver,
                             minlp_local_solver,

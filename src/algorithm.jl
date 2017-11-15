@@ -8,7 +8,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     colorful_pod::Any                                           # Turn on for a color solver
     mip_license::Any                                            # Granted solver identifier
     warm_start_mip::Bool                                        # Warm start
-    ac::Bool                                                    # Add cuts
+    no_good_cuts::Bool                                                    # Add cuts
     branch_priority_mip::Vector{Int}                            # Branching priority
 
     # Temporary internal place-holder for testing differnt things
@@ -151,7 +151,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     pod_status::Symbol                                          # Current POD status
 
     # constructor
-    function PODNonlinearModel(dev_debug, dev_test,colorful_pod, warm_start_mip, ac,
+    function PODNonlinearModel(dev_debug, dev_test,colorful_pod, warm_start_mip, no_good_cuts,
                                 log_level, timeout, maxiter, rel_gap, tol,
                                 nlp_local_solver,
                                 minlp_local_solver,
@@ -194,7 +194,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
 
         # Experimental
         m.warm_start_mip = warm_start_mip
-        m.ac = ac
+        m.no_good_cuts = no_good_cuts
         m.branch_priority_mip = []
         # Experimental
 
