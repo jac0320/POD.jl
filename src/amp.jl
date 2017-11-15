@@ -94,16 +94,9 @@ function amp_post_vars(m::PODNonlinearModel; kwargs...)
     @variable(m.model_mip, x[i=1:(m.num_var_orig+m.num_var_linear_lifted_mip+m.num_var_nonlinear_lifted_mip)])
     for i in 1:(m.num_var_orig+m.num_var_linear_lifted_mip+m.num_var_nonlinear_lifted_mip)
         (i <= m.num_var_orig) && setcategory(x[i], m.var_type_orig[i])
-        (l_var[i] > -Inf) && (setlowerbound(x[i], l_var[i]))   # Changed to tight bound, if no bound tightening is performed, will be just .l_var_orig
+        (l_var[i] > -Inf) && (setlowerbound(x[i], l_var[i]))  # Changed to tight bound, if no bound tightening is performed, will be just .l_var_orig
         (u_var[i] < Inf) && (setupperbound(x[i], u_var[i]))   # Changed to tight bound, if no bound tightening is performed, will be just .u_var_orig
     end
-
-    # Warm start the initial solution
-    # if !isempty(m.sol_incumb_lb) && m.warm_start_mip
-    #     for i in 1:(m.num_var_orig+m.num_var_linear_lifted_mip+m.num_var_nonlinear_lifted_mips)
-    #         setvalue(x[i], m.sol_incumb_lb[i])
-    #     end
-    # end
 
     return
 end

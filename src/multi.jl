@@ -30,35 +30,26 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
         end
     end
 
-    # Construct additional cuts
-    if m.no_good_cuts && !isempty(m.sol_incumb_lb)
-        m.sol_lb_pool[:cutp] = Dict()
-        for v in m.sol_lb_pool[:vars]
-            vpcnt = length(discretization[v]) - 1
-            chosenp = track_new_partition_idx(discretization, v, m.sol_lb_pool[:sol][1][v], m.sol_lb_pool[:disc][1][v])
-            m.sol_lb_pool[:cutp][v] = [i for i in 1:vpcnt if !(i in chosenp)]
-        end
-        # Add global cuts
-        amp_convhull_global_cuts(m, α)
-        # Add local cuts
-        function localcut(cb)
-            # obj = MathProgBase.cbgetobj(cb)   # This doesn't work through Gurobi
+    # Warm start
+    m.warm_start_mip && !isempty(m.sol_incumb_lb) && warmstart_convhull_α(m, α, discretization)
+
+    # Global Cuts
+    m.no_good_cuts && !isempty(m.sol_incumb_lb) && global_no_good_cuts(m, α)
+
+    # Local Cuts
+    if m.no_good_cuts
+        function localcut(cb) # Add local cuts
             vcnt = m.num_var_orig + m.num_var_linear_lifted_mip + m.num_var_nonlinear_lifted_mip   # Necessary Variable cnt of the bounding model
             evalobj = eval_objective(m, svec=[getvalue(Variable(m.model_mip, i)) for i in 1:vcnt])
             println("Incumbent MIP solution objective = $(evalobj)")
-            for i in 2:m.sol_lb_pool[:cnt]
-                cutv2p = Dict()
-                if evalobj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Deactivated
-                    lcut = true
-                    for v in m.sol_lb_pool[:vars]
-                        m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : lcut = false
-                        # lcut && println("CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
-                        # lcut || println("CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
-                        lcut || break
-                    end
-                    lcut && @lazyconstraint(cb, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
-                    lcut && (m.sol_lb_pool[:stat][i] = :Activated)
-                    lcut && println("!LAZY added based on SOL-$(i) OBJ=$(m.sol_lb_pool[:obj][i])!")
+            for i in 1:m.sol_lb_pool[:cnt]
+                (m.sol_lb_pool[:stat][i] == :Cutoff) && (m.sol_lb_pool[:stat][i] = :Alive)
+                if evalobj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Alive
+                    no_good_idxs = keys(m.sol_lb_pool[:disc][i])
+                    no_good_size = length(no_good_idxs) - 1
+                    @lazyconstraint(cb, sum(α[v][m.sol_lb_pool[:disc][i][v]] for v in no_good_idxs) <= no_good_size)
+                    println("!! GLOBAL cuts off POOL_SOL-$(i) POOL_OBJ=$(m.sol_lb_pool[:obj][i])!")
+                    m.sol_lb_pool[:stat][i] = :Cutoff
                 end
             end
         end
@@ -176,14 +167,6 @@ function amp_convhull_α(m::PODNonlinearModel, ml_indices::Any, α::Dict, dim::T
                 partition_cnt = length(discretization[i]) - 1
                 α[i] = @variable(m.model_mip, [1:partition_cnt], Bin, basename="A$(i)")
                 @constraint(m.model_mip, sum(α[i]) == 1)
-                if m.warm_start_mip && !isempty(m.sol_incumb_lb)
-                    # active_j = get_active_partition_idx(discretization, m.sol_incumb_lb[i], i)
-                    # m.branch_priority_mip = [m.branch_priority_mip, [α[i][j].col for j in track_new_partition_idx(discretization, i, m.sol_incumb_lb[i], active_j)];]
-                    # for j = 1:partition_cnt
-                    #     j == active_j ? setvalue(α[i][j], 1.0) : setvalue(α[i][j], 0.0)
-                    # end
-                    warmstart_convhull_α(m, α, discretization)
-                end
             end
         end
     end
@@ -327,23 +310,18 @@ function valid_inequalities(m::PODNonlinearModel, discretization::Dict, λ::Dict
     return
 end
 
-function amp_convhull_global_cuts(m::PODNonlinearModel, α)
+function global_no_good_cuts(m::PODNonlinearModel, α::Dict)
 
     println("Global Incumbent solution objective = $(m.best_obj)")
 
-    for i in 2:m.sol_lb_pool[:cnt]
-        cutv2p = Dict()
-        if m.best_obj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Deactivated
-            gcut = true
-            for v in m.sol_lb_pool[:vars]
-                m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v] ? cutv2p[v] = m.sol_lb_pool[:disc][i][v] : gcut = false
-                # gcut && println("G-CUT ALIVE SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
-                # gcut || println("G-CUT DEAD  SOL$(i)=OBJ$(m.sol_lb_pool[:obj][i]) VAR$(v)=$(m.sol_lb_pool[:sol][i][v]) PARTn=$(m.sol_lb_pool[:disc][i][v]) PARTf=$(m.sol_lb_pool[:cutp][v])")
-                gcut || break
-            end
-            gcut && @constraint(m.model_mip, sum(α[v][cutv2p[v]] for v in keys(cutv2p)) <= length(keys(cutv2p)) - 1)
-            gcut && (m.sol_lb_pool[:stat][i] = :Activated)
-            gcut && println("!GLOBAL CUT added based on SOL-$(i) OBJ=$(m.sol_lb_pool[:obj][i])!")
+    for i in 1:m.sol_lb_pool[:cnt]
+        (m.sol_lb_pool[:stat][i] == :Cutoff) && (m.sol_lb_pool[:stat][i] = :Alive)
+        if m.best_obj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Alive
+            no_good_idxs = keys(m.sol_lb_pool[:disc][i])
+            no_good_size = length(no_good_idxs) - 1
+            @constraint(m.model_mip, sum(α[v][m.sol_lb_pool[:disc][i][v]] for v in no_good_idxs) <= no_good_size)
+            println("!! GLOBAL cuts off POOL_SOL-$(i) POOL_OBJ=$(m.sol_lb_pool[:obj][i])!")
+            m.sol_lb_pool[:stat][i] = :Cutoff
         end
     end
 
@@ -352,23 +330,30 @@ end
 
 function warmstart_convhull_α(m::PODNonlinearModel, α::Dict, discretization::Dict)
 
-    if m.sol_lb_pool[:cnt] >= 2
-        for i in m.sol_lb_pool[:cnt]:-1:2
-            gcut = true
+    if m.sol_lb_pool[:cnt] >= 2 # can only warm-start the problem when pool is large enough
+        ws_idx = -1
+        m.sense_orig == :Min ? ws_obj = Inf : ws_obj = -Inf
+        comp_opr = Dict(:Min=>:<, :Max=>:>)
+
+        # Search for the pool for incumbent warm starter
+        for i in 1:m.sol_lb_pool[:cnt]
+            m.sol_lb_pool[:stat][i] == :Warmstarter && (m.sol_lb_pool[:stat][i] = :Alive)   # reset the status if not dead
+            if m.sol_lb_pool[:stat][i] != :Dead && eval(comp_opr[m.sense_orig])(m.sol_lb_pool[:obj][i], ws_obj)
+                ws_idx = i
+                ws_obj = m.sol_lb_pool[:obj][i]
+            end
+        end
+
+        if ws_idx > 0 # If a warm starter is found
             for v in m.sol_lb_pool[:vars]
-                !(m.sol_lb_pool[:disc][i][v] in m.sol_lb_pool[:cutp][v]) && (gcut = false)
-                gcut || break
-            end
-            if gcut
-                for v in m.sol_lb_pool[:vars]
-                    partition_cnt = length(discretization[v])-1
-                    active_j = get_active_partition_idx(discretization, m.sol_lb_pool[:sol][i][v], v)
-                    for j = 1:partition_cnt
-                        j == active_j ? setvalue(α[v][j], 1.0) : setvalue(α[v][j], 0.0)
-                    end
+                partition_cnt = length(discretization[v])-1
+                active_j = get_active_partition_idx(discretization, m.sol_lb_pool[:sol][ws_idx][v], v)
+                for j = 1:partition_cnt
+                    j == active_j ? setvalue(α[v][j], 1.0) : setvalue(α[v][j], 0.0)
                 end
-                println("!WARM STARTING! based on SOL-$(i) WS-OBJ=$(m.sol_lb_pool[:obj][i])")
             end
+            m.sol_lb_pool[:stat][ws_idx] = :Warmstarter
+            println("!! WARM START bounding MIP using POOL SOL $(ws_idx) OBJ=$(m.sol_lb_pool[:obj][ws_idx])")
         end
     end
 

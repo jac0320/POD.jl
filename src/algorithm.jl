@@ -350,6 +350,7 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
     resolve_lifted_var_bounds(m)    # resolve lifted var bounds
     pick_vars_discretization(m)     # Picking variables to be discretized
     initialize_discretization(m)    # Initialize discretization dictionary
+    m.sol_lb_pool = initialize_solution_pool(m, 0)  # Initialize the solution pool 
 
     # Setup the memory space for recording bounding solutions
     m.sol_lb_history = Vector{Vector{Float64}}(m.discretization_consecutive_forbid)
@@ -582,10 +583,10 @@ function bounding_solve(m::PODNonlinearModel; kwargs...)
     update_boundstop_options(m)
     start_bounding_solve = time()
     JuMP.build(m.model_mip)
-    # m.warm_start_mip && adjust_branch_priority(m)
+    # m.warm_start_mip && adjust_branch_priority(m) # This affects the algorithm performance
     status = solve(m.model_mip, suppress_warnings=true)
     cputime_bounding_solve = time() - start_bounding_solve
-    # m.warm_start_mip && reset_branch_priority(m)
+    # m.warm_start_mip && reset_branch_priority(m) # This affects the algorithm performance
     m.logs[:total_time] += cputime_bounding_solve
     m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
     # ================= Solve End ================ #
@@ -605,7 +606,7 @@ function bounding_solve(m::PODNonlinearModel; kwargs...)
             m.status[:bounding_solve] = status
             m.status[:bound] = :Detected
         end
-        true && collect_pool_info(m)    # Newly added: collect details sub-optimal solution
+        collect_lb_pool(m)    # Always collect details sub-optimal solution
     elseif status in status_reroute
         push!(m.logs[:bound], "-")
         m.status[:bounding_solve] = status
