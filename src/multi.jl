@@ -41,14 +41,12 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
         function localcut(cb) # Add local cuts
             vcnt = m.num_var_orig + m.num_var_linear_lifted_mip + m.num_var_nonlinear_lifted_mip   # Necessary Variable cnt of the bounding model
             evalobj = eval_objective(m, svec=[getvalue(Variable(m.model_mip, i)) for i in 1:vcnt])
-            println("Incumbent MIP solution objective = $(evalobj)")
             for i in 1:m.sol_lb_pool[:cnt]
-                (m.sol_lb_pool[:stat][i] == :Cutoff) && (m.sol_lb_pool[:stat][i] = :Alive)
                 if evalobj < m.sol_lb_pool[:obj][i] && m.sol_lb_pool[:stat][i] == :Alive
                     no_good_idxs = keys(m.sol_lb_pool[:disc][i])
                     no_good_size = length(no_good_idxs) - 1
                     @lazyconstraint(cb, sum(α[v][m.sol_lb_pool[:disc][i][v]] for v in no_good_idxs) <= no_good_size)
-                    println("!! GLOBAL cuts off POOL_SOL-$(i) POOL_OBJ=$(m.sol_lb_pool[:obj][i])!")
+                    println("!! LOCAL cuts off POOL_SOL-$(i) POOL_OBJ=$(m.sol_lb_pool[:obj][i])!")
                     m.sol_lb_pool[:stat][i] = :Cutoff
                 end
             end
