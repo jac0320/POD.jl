@@ -574,7 +574,7 @@ function merge_solution_pool(m::PODNonlinearModel, s::Dict)
     m.sol_lb_pool[:vars] = var_idxs
 
     # Show the summary
-    println("POOL size = $(m.sol_lb_pool[:cnt])")
+    println("POOL size = $(length([i for i in 1:m.sol_lb_pool[:cnt] if m.sol_lb_pool[:stat][i] != :Dead])) / $(m.sol_lb_pool[:cnt]) ")
     for i in 1:m.sol_lb_pool[:cnt]
         m.sol_lb_pool[:stat][i] != :Dead && println("ITER $(m.sol_lb_pool[:iter][i]) | SOL $(i) | POOL solution obj = $(m.sol_lb_pool[:obj][i])")
     end
