@@ -1243,13 +1243,13 @@
 
     @testset "Linear Lifting : nlp2" begin
         test_solver = PODSolver(nlp_local_solver=IpoptSolver(print_level=0),
-                                mip_solver=GurobiSolver(OutputFlag=0),
-                            #    mip_solver=PajaritoSolver(mip_solver=GurobiSolver(OutputFlag=0),cont_solver=IpoptSolver(print_level=0), log_level=0),
+                               mip_solver=PajaritoSolver(mip_solver=CbcSolver(),cont_solver=IpoptSolver(print_level=0), log_level=0),
+                               discretization_ratio=8,
                                log_level=0)
 
         m = nlp2(solver=test_solver)
 
-        solve(m) #
+        solve(m)#
 
         @test length(m.internalModel.linear_terms) == 2
         @test length(m.internalModel.nonlinear_terms) == 4

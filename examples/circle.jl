@@ -1,5 +1,3 @@
-using JuMP, MathProgBase, Gurobi, Ipopt, POD
-
 function circle(;verbose=false, solver=nothing)
 
 	if solver == nothing
@@ -34,7 +32,7 @@ function circleN(;verbose=false, solver=nothing, convhull=false, N=2, uniform=-1
 									   mip_solver=GurobiSolver(OutputFlag=0),
 									   monomial_convexhull=convhull,
 									   discretization_abs_width_tol=1e-2,
-									   maxiter=1,
+									   max_iter=1,
 									   discretization_add_partition_method="uniform",
 									   discretization_uniform_rate=uniform,
 									   presolve_bound_tightening=false,
