@@ -169,6 +169,8 @@ end
 
 function amp_post_lifted_objective(m::PODNonlinearModel)
 
+    m.feasibility_mode && return
+
     if m.obj_structure == :affine
         @objective(m.model_mip, m.sense_orig, m.bounding_obj_mip[:rhs] + sum(m.bounding_obj_mip[:coefs][i]*Variable(m.model_mip, m.bounding_obj_mip[:vars][i].args[2]) for i in 1:m.bounding_obj_mip[:cnt]))
     elseif m.obj_structure == :convex

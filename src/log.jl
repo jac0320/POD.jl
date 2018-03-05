@@ -112,11 +112,16 @@ function logging_row_entry(m::PODNonlinearModel; kwargs...)
     end
     UB_block = string(" ", objstr, " " ^ spc)
 
-    if isa(m.logs[:bound][end], Float64)
-        bdstr = string(round(m.logs[:bound][end],4))
-        spc = max(0, b_len - length(bdstr))
-    else
-        bdstr = string(m.logs[:bound][end])
+    if length(m.logs[:bound]) > 1
+        if isa(m.logs[:bound][end], Float64)
+            bdstr = string(round(m.logs[:bound][end],4))
+            spc = max(0, b_len - length(bdstr))
+        else
+            bdstr = string(m.logs[:bound][end])
+            spc = b_len - length(bdstr)
+        end
+    else # Safety Scheme
+        bdstr = "-"
         spc = b_len - length(bdstr)
     end
     LB_block = string(" ", bdstr, " " ^ spc)

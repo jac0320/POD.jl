@@ -64,7 +64,6 @@ function presolve(m::PODNonlinearModel)
         (m.presolve_bt) && init_disc(m)          # Reinitialize discretization dictionary on tight bounds
         (m.disc_ratio_branch) && (m.disc_ratio = update_disc_ratio(m, true))
         add_partition(m, use_solution=m.best_sol)  # Setting up the initial discretization
-        m.loglevel > 0 && println("presolve ended.")
     elseif m.status[:local_solve] in status_reroute
         (m.loglevel > 0) && println("first attempt at local solve failed, performing bound tightening without objective value...")
         bound_tightening(m, use_bound = false)                      # do bound tightening without objective value
@@ -80,18 +79,18 @@ function presolve(m::PODNonlinearModel)
             (m.disc_ratio_branch) && (m.disc_ratio = update_disc_ratio(m))
             add_partition(m, use_solution=m.best_bound_sol)
         end
-        m.loglevel > 0 && println("Presolve ended.")
     elseif m.status[:local_solve] == :Not_Enough_Degrees_Of_Freedom
-        warn("Presolve ends with local solver yielding $(m.status[:local_solve]). \n Consider more replace equality constraints with >= and <= to resolve this.")
+        warn("presolve ends with local solver yielding $(m.status[:local_solve]). \n Consider more replace equality constraints with >= and <= to resolve this.")
     else
-        warn("Presolve ends with local solver yielding $(m.status[:local_solve]).")
+        warn("presolve ends with local solver yielding $(m.status[:local_solve]).")
     end
 
     cputime_presolve = time() - start_presolve
     m.logs[:presolve_time] += cputime_presolve
     m.logs[:total_time] = m.logs[:presolve_time]
     m.logs[:time_left] -= m.logs[:presolve_time]
-    (m.loglevel > 0) && println("Presolve time = $(@compat round.(m.logs[:total_time],2))s")
+    (m.loglevel > 0) && println("presolve time = $(@compat round.(m.logs[:total_time],2))s")
+    m.loglevel > 0 && println("Presolve ended.")
 
     return
 end
@@ -118,6 +117,7 @@ function check_exit(m::PODNonlinearModel)
 
     # Infeasibility check
     m.status[:bounding_solve] == :Infeasible && return true
+    m.feasibility_mode && m.status[:feasible_solution] == :Detected && return true
 
     # Unbounded check
     m.status[:bounding_solve] == :Unbounded && return true
@@ -276,7 +276,7 @@ function bounding_solve(m::PODNonlinearModel)
     elseif status in status_infeasible
         push!(m.logs[:bound], "-")
         m.status[:bounding_solve] = :Infeasible
-        PODDEBUG && print_iis_gurobi(m.model_mip) # Diagnostic code
+        PODDEBUG && !m.feasibility_mode && print_iis_gurobi(m.model_mip) # Diagnostic code
         warn("[INFEASIBLE] Infeasibility detected via convex relaxation Infeasibility")
     elseif status == :Unbounded
         m.status[:bounding_solve] = :Unbounded

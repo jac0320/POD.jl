@@ -279,7 +279,7 @@ function resolve_inf_bounds(m::PODNonlinearModel)
         end
     end
 
-    warnuser && println("Inf bound detected on $(infcount) variables. Initialize with value -10e4/10e4. This may affect global optimality and performance.")
+    warnuser && warn("Inf bound detected on $(infcount) variables. Initialize with value -10e4/10e4. This may affect global optimality and performance.", once=true)
 
     return
 end

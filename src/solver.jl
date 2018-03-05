@@ -63,6 +63,9 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     int_cumulative_disc::Bool                                   # [INACTIVE] Cummulatively involve integer variables for discretization
     int_fully_disc::Bool                                        # [INACTIVE] Construct equalvaient formulation for integer variables
 
+    # Infeasibility Proof Mode
+    feasibility_mode::Bool
+
     # add all the solver options
     nlp_solver::MathProgBase.AbstractMathProgSolver             # Local continuous NLP solver for solving NLPs at each iteration
     minlp_solver::MathProgBase.AbstractMathProgSolver           # Local MINLP solver for solving MINLPs at each iteration
@@ -196,7 +199,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
                                 user_parameters,
                                 int_enable,
                                 int_cumulative_disc,
-                                int_fully_disc)
+                                int_fully_disc,
+                                feasibility_mode)
 
         m = new()
 
@@ -254,6 +258,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.int_enable = int_enable
         m.int_cumulative_disc = int_cumulative_disc
         m.int_fully_disc = int_fully_disc
+
+        m.feasibility_mode = feasibility_mode
 
         m.num_var_orig = 0
         m.num_cont_var_orig = 0
@@ -362,6 +368,8 @@ type PODSolver <: MathProgBase.AbstractMathProgSolver
     int_cumulative_disc::Bool
     int_fully_disc::Bool
 
+    feasibility_mode::Bool
+
     # other options to be added later on
 end
 
@@ -420,6 +428,8 @@ function PODSolver(;
     int_enable = false,
     int_cumulative_disc = true,
     int_fully_disc = false,
+
+    feasibility_mode = false,
 
     kwargs...
     )
@@ -483,7 +493,8 @@ function PODSolver(;
         user_parameters,
         int_enable,
         int_cumulative_disc,
-        int_fully_disc)
+        int_fully_disc,
+        feasibility_mode)
     end
 
 # Create POD nonlinear model: can solve with nonlinear algorithm only
@@ -549,6 +560,8 @@ function MathProgBase.NonlinearModel(s::PODSolver)
     int_cumulative_disc = s.int_cumulative_disc
     int_fully_disc = s.int_fully_disc
 
+    feasibility_mode = s.feasibility_mode
+
     return PODNonlinearModel(colorful_pod,
                             loglevel, timeout, maxiter, relgap, tol,
                             nlp_solver,
@@ -589,7 +602,8 @@ function MathProgBase.NonlinearModel(s::PODSolver)
                             user_parameters,
                             int_enable,
                             int_cumulative_disc,
-                            int_fully_disc)
+                            int_fully_disc,
+                            feasibility_mode)
 end
 
 function MathProgBase.loadproblem!(m::PODNonlinearModel,
