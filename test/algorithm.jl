@@ -39,7 +39,7 @@ end
 
 @testset " Validation Test || AMP-TMC || minimum-vertex solving || examples/nlp3.jl (3 iterations)" begin
 
-    test_solver=PODSolver(nlp_solver=IpoptSolver(print_level=0),
+    test_solver=PODSolver(nlp_solver=IpoptSolver(print_level=0, max_iter=9999),
                            mip_solver=CbcSolver(logLevel=0),
                            bilinear_convexhull=false,
                            monomial_convexhull=false,
@@ -240,7 +240,7 @@ end
 
 @testset " Validation Test || AMP || multi4N || N = 2 || exprmode=1:11" begin
 
-    objBoundVec = Any[4.68059, 12.0917, 8.94604, 10.0278, 8.10006, 6.6384, 12.5265, 7.39747, 6.02928, 7.91467, 7.88307]
+    objBoundVec = Any[4.68059, 12.0917, 8.94604, 10.0278, 8.5228, 6.0773, 11.496, 7.3975, 6.1006, 8.9767, 7.451]
     objValVec = Any[2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
     for i in 1:11
         test_solver=PODSolver(nlp_solver=IpoptSolver(print_level=0),
@@ -248,6 +248,7 @@ end
                                disc_abs_width_tol=1e-2,
                                maxiter=4,
                                presolve_bp=false,
+                               presolve_bt=false,
                                loglevel=1)
 
         m = multi4N(solver=test_solver, N=2, exprmode=i)
@@ -266,6 +267,7 @@ end
                            disc_abs_width_tol=1e-2,
                            maxiter=4,
                            presolve_bp=false,
+                           presolve_bt=false,
                            loglevel=1)
 
     m = multi2(solver=test_solver)
@@ -286,6 +288,7 @@ end
                                disc_abs_width_tol=1e-2,
                                maxiter=4,
                                presolve_bp=false,
+                               presolve_bt=false,
                                loglevel=1)
 
         m = multi3N(solver=test_solver, N=2, exprmode=i)
@@ -304,6 +307,7 @@ end
                            disc_abs_width_tol=1e-2,
                            maxiter=3,
                            presolve_bp=false,
+                           presolve_bt=false,
                            loglevel=1)
 
     m = multiKND(solver=test_solver, randomub=50, K=3, N=3, D=0)
@@ -362,6 +366,7 @@ end
                            disc_ratio=18,
                            maxiter=1,
                            presolve_bp=true,
+                           presolve_bt=false,
                            loglevel=100)
 
     m = nlp3(solver=test_solver)
@@ -378,6 +383,7 @@ end
                            disc_ratio_branch=true,
                            maxiter=1,
                            presolve_bp=true,
+                           presolve_bt=false,
                            loglevel=100)
 
     m = nlp3(solver=test_solver)
@@ -394,6 +400,7 @@ end
                            disc_ratio_branch=true,
                            maxiter=1,
                            presolve_bp=true,
+                           presolve_bt=false,
                            loglevel=100)
 
     m = castro2m2(solver=test_solver)
@@ -410,6 +417,7 @@ end
                            disc_ratio_branch=true,
                            maxiter=1,
                            presolve_bp=true,
+                           presolve_bt=false,
                            loglevel=100)
 
     m = multi3N(solver=test_solver, N=3, exprmode=1)
@@ -426,6 +434,7 @@ end
                            disc_ratio_branch=true,
                            maxiter=1,
                            presolve_bp=false,
+                           presolve_bt=false,
                            loglevel=100)
 
     m = multi3N(solver=test_solver, N=3, exprmode=1)
@@ -442,6 +451,7 @@ end
                            disc_ratio_branch=true,
                            maxiter=1,
                            presolve_bp=true,
+                           presolve_bt=false,
                            loglevel=100)
 
     m = multi4N(solver=test_solver, N=2, exprmode=1)
@@ -458,6 +468,7 @@ end
                            disc_ratio_branch=true,
                            maxiter=1,
                            presolve_bp=false,
+                           presolve_bt=false,
                            loglevel=100)
 
     m = multi4N(solver=test_solver, N=2, exprmode=1)
@@ -474,6 +485,7 @@ end
                            disc_ratio_branch=true,
                            maxiter=1,
                            presolve_bp=true,
+                           presolve_bt=false,
                            loglevel=100)
 
     m = multi4N(solver=test_solver, N=2, exprmode=2)
@@ -489,6 +501,7 @@ end
                                                           log_level=0),
                           nlp_solver=IpoptSolver(print_level=0),
                           mip_solver=CbcSolver(logLevel=0),
+                          presolve_bt=false,
                           loglevel=100)
 
     m = bpml_lnl(test_solver)
@@ -513,6 +526,7 @@ end
                                                           log_level=0),
                           nlp_solver=IpoptSolver(print_level=0),
                           mip_solver=CbcSolver(logLevel=0),
+                          presolve_bt=false,
                           loglevel=100)
 
     m = bpml_binl(test_solver)
@@ -551,6 +565,7 @@ end
                                                     cont_solver=IpoptSolver(print_level=0),
                                                     log_level=0),
                           disc_var_pick=1,
+                          presolve_bt=false,
                           loglevel=100)
 
     m = bpml_monl(test_solver)
@@ -613,13 +628,14 @@ end
                                                     cont_solver=IpoptSolver(print_level=0),
                                                     log_level=0),
                           disc_var_pick=1,
+                          presolve_bt=false,
                           loglevel=100)
 
     m = bpml_negative(test_solver)
     solve(m)
 
-    @test m.objVal <= 13307.63749
-    @test m.objBound >= 13307.63690
+    @test m.objVal >= 13307.63748
+    @test m.objBound <= 13307.6373
 
     @test haskey(m.internalModel.nonconvex_terms, Expr[:(x[6]), :(x[7])])
     @test haskey(m.internalModel.nonconvex_terms, Expr[:(x[7]), :(x[8])])
@@ -829,6 +845,7 @@ end
                            mip_solver=CbcSolver(logLevel=0),
                            maxiter=1,
                            colorful_pod="warmer",
+                           presolve_bt=false,
                            loglevel=100)
 
     m = castro4m2(solver=test_solver)
@@ -861,6 +878,7 @@ end
                            mip_solver=PajaritoSolver(cont_solver=IpoptSolver(print_level=0), mip_solver=CbcSolver(logLevel=0), log_level=0),
                            maxiter=1,
                            colorful_pod="solarized",
+                           presolve_bt=false,
                            loglevel=100)
     m = convex_solve(solver=test_solver)
     status = solve(m)
@@ -873,6 +891,7 @@ end
                            disc_add_partition_method = "uniform",
                            disc_uniform_rate = 10,
                            maxiter=1,
+                           presolve_bt=false,
                            colorful_pod="random",
                            timeout=100000,
                            loglevel=100)
@@ -889,6 +908,7 @@ end
                             bilinear_convexhull=true,
                             monomial_convexhull=true,
                             presolve_bp=true,
+                            presolve_bt=false,
                             loglevel=100)
     m = binprod_nlp3(solver=test_solver)
     status = solve(m)

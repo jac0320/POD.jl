@@ -220,12 +220,12 @@ function mccormick_binlin(m::JuMP.Model,binlin::JuMP.Variable,bin::JuMP.Variable
     # TODO think about how to address this issue
     warnuser = false
     if ub == Inf
-        ub = 1e3
+        ub = 1e4
         warnuser = true
     end
 
     if lb == -Inf
-        lb = -1e3
+        lb = -1e4
         warnuser = true
     end
 
@@ -256,11 +256,11 @@ function mccormick_bin(m::JuMP.Model,xy::JuMP.Variable,x::JuMP.Variable,y::JuMP.
 end
 
 # [TODO] Unused functions but will be used for later
-# function mccormick_monomial(m,xy,x,xˡ,xᵘ)
-#     @constraint(m, xy >= x^2)
-#     @constraint(m, xy <= (xˡ+xᵘ)*x - (xˡ*xᵘ))
-#     return
-# end
+function mccormick_monomial(m,xy,x,xˡ,xᵘ)
+    @constraint(m, xy >= x^2)
+    @constraint(m, xy <= (xˡ+xᵘ)*x - (xˡ*xᵘ))
+    return
+end
 #
 # function tightmccormick_monomial(m,x_p,x,xz,xˡ,xᵘ,z,p,lazy,quad) # if p=2, tightened_lazycuts = tightmccormick_quad
 #     if lazy == 1
