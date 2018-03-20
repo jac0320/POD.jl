@@ -69,6 +69,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
 
     # Infeasibility Proof Mode
     feasibility_mode::Bool
+    slack_links::Dict{Int, Any}                              # Constr ID => slackness variables
+    num_slack_vars::Int
 
     # add all the solver options
     nlp_solver::MathProgBase.AbstractMathProgSolver             # Local continuous NLP solver for solving NLPs at each iteration
@@ -156,6 +158,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     best_abs_gap::Float64                                       # Absolute gap = |best_bound - best_obj|
     bound_sol_history::Vector{Vector{Float64}}                  # History of bounding solutions limited by parameter disc_consecutive_forbid
     bound_sol_pool::Dict{Any, Any}                              # A pool of solutions from solving model_mip
+
+    # Feasibility Related Attributes
 
     # Logging information and status
     logs::Dict{Symbol,Any}                                      # Logging information
@@ -750,6 +754,9 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
         println("Automatically turning OFF ratio branching due to the size of the problem")
         m.disc_ratio_branch=false
     end
+
+    # Feasibility Mode Preprocessing
+    m.feasibility_mode && initialize_slackness_link(m)
 
     # Initialize the solution pool
     m.bound_sol_pool = initialize_solution_pool(m, 0)  # Initialize the solution pool

@@ -30,6 +30,7 @@ include("presolve.jl")
 include("amp.jl")
 include("embedding.jl")
 include("heuristics.jl")
+include("feasibility.jl")
 
 # Convexification method
 include("multi.jl")

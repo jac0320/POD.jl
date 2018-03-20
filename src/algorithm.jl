@@ -28,7 +28,7 @@ function global_solve(m::PODNonlinearModel)
 
     while !check_exit(m)
         m.logs[:n_iter] += 1
-        create_bounding_mip(m)                  # Build the relaxation model
+        m.feasibility_mode ? create_bounding_slackness_mip(m) : create_bounding_mip(m)  # Build the relaxation model
         bounding_solve(m)                       # Solve the relaxation model
         update_opt_gap(m)                       # Update optimality gap
         check_exit(m) && break                  # Feasibility check
@@ -108,6 +108,11 @@ function check_exit(m::PODNonlinearModel)
     m.status[:bounding_solve] == :Infeasible && return true
     m.feasibility_mode && m.status[:feasible_solution] == :Detected && return true
 
+    # Feasibility mode
+    if m.feasibility_mode
+        m.best_bound > 1e-6 && return true
+    end
+
     # Unbounded check
     m.status[:bounding_solve] == :Unbounded && return true
 
@@ -155,7 +160,6 @@ function local_solve(m::PODNonlinearModel; presolve = false)
     if presolve == false
         l_var, u_var = fix_domains(m)
     else
-        # l_var, u_var = m.l_var_orig, m.u_var_orig  # change to l_var_tight/u_var_tight ?
         l_var, u_var = m.l_var_tight[1:m.num_var_orig], m.u_var_tight[1:m.num_var_orig]
     end
 

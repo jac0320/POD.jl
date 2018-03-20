@@ -1,38 +1,3 @@
-"""
-
-    create_bounding_mip(m::PODNonlinearModel; use_disc::Dict)
-
-Set up a JuMP MILP bounding model base on variable domain partitioning information stored in `use_disc`.
-By default, if `use_disc is` not provided, it will use `m.discretizations` store in the POD model.
-The basic idea of this MILP bounding model is to use Tighten McCormick to convexify the original Non-convex region.
-Among all presented partitionings, the bounding model will choose one specific partition as the lower bound solution.
-The more partitions there are, the better or finer bounding model relax the original MINLP while the more
-efforts required to solve this MILP is required.
-
-This function is implemented in the following manner:
-
-    * [`amp_post_vars`](@ref): post original and lifted variables
-    * [`amp_post_lifted_constraints`](@ref): post original and lifted constraints
-    * [`amp_post_lifted_obj`](@ref): post original or lifted objective function
-    * [`amp_post_tmc_mccormick`](@ref): post Tighen McCormick variables and constraints base on `discretization` information
-
-More specifically, the Tightening McCormick used here can be genealized in the following mathematcial formulation. Consider a nonlinear term
-```math
-\\begin{subequations}
-\\begin{align}
-   &\\widehat{x_{ij}} \\geq (\\mathbf{x}_i^l\\cdot\\hat{\\mathbf{y}}_i) x_j + (\\mathbf{x}_j^l\\cdot\\hat{\\mathbf{y}}_j) x_i - (\\mathbf{x}_i^l\\cdot\\hat{\\mathbf{y}}_i)(\\mathbf{x}_j^l\\cdot\\hat{\\mathbf{y}}_j) \\\\
-   &\\widehat{x_{ij}} \\geq (\\mathbf{x}_i^u\\cdot\\hat{\\mathbf{y}}_i) x_j + (\\mathbf{x}_j^u\\cdot\\hat{\\mathbf{y}}_j) x_i - (\\mathbf{x}_i^u\\cdot\\hat{\\mathbf{y}}_i)(\\mathbf{x}_j^u\\cdot\\hat{\\mathbf{y}}_j) \\\\
-   &\\widehat{x_{ij}} \\leq (\\mathbf{x}_i^l\\cdot\\hat{\\mathbf{y}}_i) x_j + (\\mathbf{x}_j^u\\cdot\\hat{\\mathbf{y}}_j) x_i - (\\mathbf{x}_i^l\\cdot\\hat{\\mathbf{y}}_i)(\\mathbf{x}_j^u\\cdot\\hat{\\mathbf{y}}_j) \\\\
-   &\\widehat{x_{ij}} \\leq (\\mathbf{x}_i^u\\cdot\\hat{\\mathbf{y}}_i) x_j + (\\mathbf{x}_j^l\\cdot\\hat{\\mathbf{y}}_j) x_i - (\\mathbf{x}_i^u\\cdot\\hat{\\mathbf{y}}_i)(\\mathbf{x}_j^l\\cdot\\hat{\\mathbf{y}}_j) \\\\
-   & \\mathbf{x}_i^u\\cdot\\hat{\\mathbf{y}}_i) \\geq x_{i} \\geq \\mathbf{x}_i^l\\cdot\\hat{\\mathbf{y}}_i) \\\\
-   & \\mathbf{x}_j^u\\cdot\\hat{\\mathbf{y}}_j) \\geq x_{j} \\geq \\mathbf{x}_j^l\\cdot\\hat{\\mathbf{y}}_j) \\\\
-   &\\sum \\hat{\\mathbf{y}_i} = 1, \\ \\ \\sum \\hat{\\mathbf{y}_j}_k = 1 \\\\
-   &\\hat{\\mathbf{y}}_i \\in \\{0,1\\}, \\hat{\\mathbf{y}}_j \\in \\{0,1\\}
-\\end{align}
-\\end{subequations}
-```
-
-"""
 function create_bounding_mip(m::PODNonlinearModel; use_disc=nothing)
 
     use_disc == nothing ? discretization = m.discretization : discretization = use_disc
@@ -43,6 +8,25 @@ function create_bounding_mip(m::PODNonlinearModel; use_disc=nothing)
     amp_post_vars(m)                                                # Post original and lifted variables
     amp_post_lifted_constraints(m)                                  # Post lifted constraints
     amp_post_lifted_objective(m)                                    # Post objective
+    amp_post_convexification(m, use_disc=discretization)            # Convexify problem
+    # --------------------------------- #
+    cputime_build = time() - start_build
+    m.logs[:total_time] += cputime_build
+    m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
+
+    return
+end
+
+function create_bounding_slackness_mip(m::PODNonlinearModel; use_disc=nothing)
+
+    use_disc == nothing ? discretization = m.discretization : discretization = use_disc
+
+    m.model_mip = Model(solver=m.mip_solver) # Construct JuMP Model
+    start_build = time()
+    # ------- Model Construction ------ #
+    amp_post_vars(m, enable_slack=true)                             # Post original and lifted variables
+    amp_post_lifted_constraints(m, enable_slack=true)               # Post lifted constraints
+    amp_post_slackness_objective(m)                                    # Post objective
     amp_post_convexification(m, use_disc=discretization)            # Convexify problem
     # --------------------------------- #
     cputime_build = time() - start_build
@@ -74,7 +58,7 @@ function amp_post_convexification(m::PODNonlinearModel; use_disc=nothing)
     return
 end
 
-function amp_post_vars(m::PODNonlinearModel; kwargs...)
+function amp_post_vars(m::PODNonlinearModel;enable_slack=false, kwargs...)
 
     options = Dict(kwargs)
 
@@ -88,13 +72,15 @@ function amp_post_vars(m::PODNonlinearModel; kwargs...)
 
     @variable(m.model_mip, x[i=1:(m.num_var_orig+m.num_var_linear_mip+m.num_var_nonlinear_mip)])
 
+    enable_slack && @variable(m.model_mip, s[i=1:m.num_slack_vars]>=0)
+
     for i in 1:(m.num_var_orig+m.num_var_linear_mip+m.num_var_nonlinear_mip)
 
         (i <= m.num_var_orig) && setcategory(x[i], m.var_type_orig[i])  # This is a tricky step, not enforcing category of lifted variables is able to improve performance
         l_var[i] > -Inf && setlowerbound(x[i], l_var[i])    # Changed to tight bound, if no bound tightening is performed, will be just .l_var_orig
         u_var[i] < Inf && setupperbound(x[i], u_var[i])    # Changed to tight bound, if no bound tightening is performed, will be just .u_var_orig
 
-        #TODO experimental code, make sure it is properly re-structured
+        #TODO experimental code for integer problems, make sure it is properly re-structured
         m.int_enable && m.var_type[i] == :Int && setcategory(x[i], :Cont)
         if m.int_enable && m.var_type[i] == :Int && i in m.disc_vars
             setlowerbound(x[i], floor(m.l_var_tight[i]) - 0.5)
@@ -107,16 +93,23 @@ function amp_post_vars(m::PODNonlinearModel; kwargs...)
     return
 end
 
-
-function amp_post_lifted_constraints(m::PODNonlinearModel)
+function amp_post_lifted_constraints(m::PODNonlinearModel;enable_slack=false)
 
     for i in 1:m.num_constr_orig
-        if m.constr_structure[i] == :affine
-            amp_post_affine_constraint(m.model_mip, m.bounding_constr_mip[i])
-        elseif m.constr_structure[i] == :convex
-            amp_post_convex_constraint(m.model_mip, m.bounding_constr_mip[i])
+        if enable_slack
+            if m.constr_structure[i] == :affine
+                amp_post_affine_slack_constraint(m, i)
+            else
+                error("Unknown constr_structure type $(m.constr_structure[i]). No support for convex constraints under feasibility_mode")
+            end
         else
-            error("Unknown constr_structure type $(m.constr_structure[i])")
+            if m.constr_structure[i] == :affine
+                amp_post_affine_constraint(m.model_mip, m.bounding_constr_mip[i])
+            elseif m.constr_structure[i] == :convex
+                amp_post_convex_constraint(m.model_mip, m.bounding_constr_mip[i])
+            else
+                error("Unknown constr_structure type $(m.constr_structure[i])")
+            end
         end
     end
 
@@ -127,17 +120,14 @@ function amp_post_lifted_constraints(m::PODNonlinearModel)
     return
 end
 
-function amp_post_affine_constraint(model_mip::JuMP.Model, affine::Dict)
+function amp_post_affine_constraint(model_mip::JuMP.Model, affine::Dict; constr_id::Int=0)
 
     if affine[:sense] == :(>=)
-        @constraint(model_mip,
-            sum(affine[:coefs][j]*Variable(model_mip, affine[:vars][j].args[2]) for j in 1:affine[:cnt]) >= affine[:rhs])
+        @constraint(model_mip, sum(affine[:coefs][j]*Variable(model_mip, affine[:vars][j].args[2]) for j in 1:affine[:cnt]) >= affine[:rhs])
     elseif affine[:sense] == :(<=)
-        @constraint(model_mip,
-            sum(affine[:coefs][j]*Variable(model_mip, affine[:vars][j].args[2]) for j in 1:affine[:cnt]) <= affine[:rhs])
+        @constraint(model_mip, sum(affine[:coefs][j]*Variable(model_mip, affine[:vars][j].args[2]) for j in 1:affine[:cnt]) <= affine[:rhs])
     elseif affine[:sense] == :(==)
-        @constraint(model_mip,
-            sum(affine[:coefs][j]*Variable(model_mip, affine[:vars][j].args[2]) for j in 1:affine[:cnt]) == affine[:rhs])
+        @constraint(model_mip, sum(affine[:coefs][j]*Variable(model_mip, affine[:vars][j].args[2]) for j in 1:affine[:cnt]) == affine[:rhs])
     else
         error("Unkown sense.")
     end
@@ -168,8 +158,6 @@ function amp_post_linear_lift_constraints(model_mip::JuMP.Model, l::Dict)
 end
 
 function amp_post_lifted_objective(m::PODNonlinearModel)
-
-    m.feasibility_mode && return
 
     if m.obj_structure == :affine
         @objective(m.model_mip, m.sense_orig, m.bounding_obj_mip[:rhs] + sum(m.bounding_obj_mip[:coefs][i]*Variable(m.model_mip, m.bounding_obj_mip[:vars][i].args[2]) for i in 1:m.bounding_obj_mip[:cnt]))
@@ -250,13 +238,6 @@ function add_adaptive_partition(m::PODNonlinearModel;kwargs...)
     for i in m.disc_vars
         point = point_vec[i]                # Original Variable
         λCnt = length(discretization[i])
-
-        # @show i, point, discretization[i] # Debugger
-        # Apply special and user methods
-        # Disabled for testing performance
-        # for injector in m.method_partition_injection
-        #     injector(m, i, discretization[i], point, ratio, processed)
-        # end
 
         # Built-in method based-on variable type
         if m.var_type[i] == :Cont
@@ -417,7 +398,7 @@ function update_disc_ratio(m::PODNonlinearModel, presolve=false)
         m.loglevel > 0 && println("RATIO BRANCHING OFF due to solution variance test passed.")
         m.disc_ratio_branch = false # If an incumbent ratio is selected, then stop the branching scheme
     end
-    
+
     if !isempty(m.best_sol)
         m.discretization = add_adaptive_partition(m, use_disc=m.discretization, branching=true, use_ratio=incumb_ratio, use_solution=m.best_sol)
     else
