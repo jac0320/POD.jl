@@ -60,6 +60,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
 
     # Domain Reduction
     presolve_bp::Bool                                           # Conduct basic bound propagation
+    arc_consistency::Bool                                       # Turn ON/OFF the capability to do arc consistency or not
+    arc_consistency_depth::Int                                  # Maximum recursive depth
     user_parameters::Dict                                       # Additional parameters used for user-defined functional inputs
 
     # Features for Integer Problems (NOTE: no support for intlin problems)
@@ -206,6 +208,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
                                 presolve_bt_relax,
                                 presolve_bt_mip_timeout,
                                 presolve_bp,
+                                arc_consistency,
+                                arc_consistency_depth,
                                 user_parameters,
                                 int_enable,
                                 int_cumulative_disc,
@@ -264,6 +268,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.presolve_bt_mip_timeout = presolve_bt_mip_timeout
 
         m.presolve_bp = presolve_bp
+        m.arc_consistency = arc_consistency
+        m.arc_consistency_depth = arc_consistency_depth
 
         m.nlp_solver = nlp_solver
         m.minlp_solver = minlp_solver
@@ -383,6 +389,8 @@ type PODSolver <: MathProgBase.AbstractMathProgSolver
     presolve_bt_mip_timeout::Float64
 
     presolve_bp::Bool
+    arc_consistency::Bool
+    arc_consistency_depth::Int
 
     user_parameters::Dict
     int_enable::Bool
@@ -449,6 +457,8 @@ function PODSolver(;
     presolve_bt_mip_timeout = Inf,
 
     presolve_bp = true,
+    arc_consistency = false,
+    arc_consistency_depth = 1,
 
     user_parameters = Dict(),
     int_enable = false,
@@ -520,6 +530,8 @@ function PODSolver(;
         presolve_bt_relax,
         presolve_bt_mip_timeout,
         presolve_bp,
+        arc_consistency,
+        arc_consistency_depth,
         user_parameters,
         int_enable,
         int_cumulative_disc,
@@ -589,6 +601,8 @@ function MathProgBase.NonlinearModel(s::PODSolver)
     presolve_bt_mip_timeout = s.presolve_bt_mip_timeout
 
     presolve_bp = s.presolve_bp
+    arc_consistency = s.arc_consistency
+    arc_consistency_depth = s.arc_consistency_depth
 
     user_parameters = s.user_parameters
     int_enable = s.int_enable
@@ -636,6 +650,8 @@ function MathProgBase.NonlinearModel(s::PODSolver)
                             presolve_bt_relax,
                             presolve_bt_mip_timeout,
                             presolve_bp,
+                            arc_consistency,
+                            arc_consistency_depth,
                             user_parameters,
                             int_enable,
                             int_cumulative_disc,

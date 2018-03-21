@@ -38,6 +38,7 @@ function global_solve(m::PODNonlinearModel)
         check_exit(m) && break                  # Detect optimality termination
         algorithm_automation(m)                 # Automated adjustments
         add_partition(m)                        # Add extra discretizations
+        # conflict_analysis(m)                    # EXPERIMENTAL CODE
     end
 
     return
@@ -67,6 +68,7 @@ function presolve(m::PODNonlinearModel)
     elseif m.status[:local_solve] in status_reroute
         (m.loglevel > 0) && println("performing bound tightening without objective bounds...")
         bound_tightening(m, use_bound = false)                      # do bound tightening without objective value
+        m.presolve_bt && init_disc(m)
         (m.disc_ratio_branch) && (m.disc_ratio = update_disc_ratio(m))
     elseif m.status[:local_solve] == :Not_Enough_Degrees_Of_Freedom
         warn("presolve ends with local solver yielding $(m.status[:local_solve]). \n Consider more replace equality constraints with >= and <= to resolve this.")
