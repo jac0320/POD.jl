@@ -1,3 +1,10 @@
+function conflict_analysis(m::PODNonlinearModel)
+
+    # Perform Bound Analyses on Discretized Variables
+
+    return
+end
+
 """
     init_tight_bound(m::PODNonlinearModel)
 

@@ -213,6 +213,22 @@ function summary_status(m::PODNonlinearModel)
     #               happens when lower bound problem is extremely hard to solve
     # :Unknown : termination with no exception recorded
 
+    if m.feasibility_mode
+        if m.status[:bound] == :Detected && m.status[:feasible_solution] == :Detected
+            m.pod_status = :Feasible
+        elseif m.status[:bounding_solve] == :Infeasible
+            m.pod_status = :Infeasible
+        elseif m.status[:bound] == :Detected && m.status[:feasible_solution] == :none
+            m.pod_status = :Unkown
+        elseif m.status[:bound] == :none && m.status[:feasible_solution] == :Detected
+            m.pod_status = :Feasible
+        else
+            warn("[EXCEPTION] Indefinite POD status. Please report your instance and configuration as and Issue (https://github.com/lanl-ansi/POD.jl/issues) to help us make POD better.")
+        end
+        print_with_color(:green, "\n POD ended with status $(m.pod_status)\n")
+        return
+    end
+
     if m.status[:bound] == :Detected && m.status[:feasible_solution] == :Detected
         m.best_rel_gap > m.relgap ? m.pod_status = :UserLimits : m.pod_status = :Optimal
     elseif m.status[:bounding_solve] == :Infeasible
@@ -224,7 +240,6 @@ function summary_status(m::PODNonlinearModel)
     else
         warn("[EXCEPTION] Indefinite POD status. Please report your instance and configuration as and Issue (https://github.com/lanl-ansi/POD.jl/issues) to help us make POD better.")
     end
-
     print_with_color(:green, "\n POD ended with status $(m.pod_status)\n")
 
     return

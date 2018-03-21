@@ -208,9 +208,7 @@ function solve_bound_tightening_model(m::PODNonlinearModel; kwargs...)
     return status
 end
 
-"""
-    TODO: docstring
-"""
+
 function post_obj_bounds(m::PODNonlinearModel, bound::Float64; kwargs...)
     if m.sense_orig == :Max
         @constraint(m.model_mip,

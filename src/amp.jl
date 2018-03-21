@@ -17,25 +17,6 @@ function create_bounding_mip(m::PODNonlinearModel; use_disc=nothing)
     return
 end
 
-function create_bounding_slackness_mip(m::PODNonlinearModel; use_disc=nothing)
-
-    use_disc == nothing ? discretization = m.discretization : discretization = use_disc
-
-    m.model_mip = Model(solver=m.mip_solver) # Construct JuMP Model
-    start_build = time()
-    # ------- Model Construction ------ #
-    amp_post_vars(m, enable_slack=true)                             # Post original and lifted variables
-    amp_post_lifted_constraints(m, enable_slack=true)               # Post lifted constraints
-    amp_post_slackness_objective(m)                                    # Post objective
-    amp_post_convexification(m, use_disc=discretization)            # Convexify problem
-    # --------------------------------- #
-    cputime_build = time() - start_build
-    m.logs[:total_time] += cputime_build
-    m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
-
-    return
-end
-
 """
     amp_post_convexification(m::PODNonlinearModel; kwargs...)
 
@@ -180,6 +161,8 @@ function add_partition(m::PODNonlinearModel; kwargs...)
         m.discretization = eval(m.disc_add_partition_method)(m, use_disc=discretization, use_solution=point_vec)
     elseif m.disc_add_partition_method == "adaptive"
         m.discretization = add_adaptive_partition(m, use_disc=discretization, use_solution=point_vec)
+    elseif m.disc_add_partition_method == "separative"
+        m.discretization = add_separative_partition(m, use_disc=discretization, user_solution=point_vec)
     elseif m.disc_add_partition_method == "uniform"
         m.discretization = add_uniform_partition(m, use_disc=discretization)
     else
@@ -188,6 +171,97 @@ function add_partition(m::PODNonlinearModel; kwargs...)
 
     return
 end
+
+function add_separative_partition(m::PODNonlinearModel;kwargs...)
+
+    options = Dict(kwargs)
+
+    haskey(options, :use_disc) ? discretization = options[:use_disc] : discretization = m.discretization
+    haskey(options, :use_solution) ? point_vec = copy(options[:use_solution]) : point_vec = copy(m.best_bound_sol)
+    haskey(options, :use_ratio) ? ratio = options[:use_ratio] : ratio = m.disc_ratio
+    haskey(options, :branching) ? branching = options[:branching] : branching = false
+
+    if length(point_vec) < m.num_var_orig + m.num_var_linear_mip + m.num_var_nonlinear_mip
+        point_vec = resolve_lifted_var_value(m, point_vec)  # Update the solution vector for lifted variable
+    end
+
+    if branching
+        discretization = deepcopy(discretization)
+    end
+
+    processed = Set{Int}()
+
+    # ? Perform discretization base on type of nonlinear terms ? #
+    for i in m.disc_vars
+        point = point_vec[i]                # Original Variable
+        λCnt = length(discretization[i])
+        # Built-in method based-on variable type
+        if m.var_type[i] == :Cont
+            i in processed && continue
+            point = correct_point(m, discretization[i], point, i)
+            for j in 1:λCnt
+                if point >= discretization[i][j] && point <= discretization[i][j+1]  # Locating the right location
+                    insert_separative_partition(m, i, j, point, discretization[i])
+                    push!(processed, i)
+                    break
+                end
+            end
+        else
+            error("Unexpected variable types during injecting partitions")
+        end
+    end
+
+    return discretization
+end
+
+function insert_separative_partition(m::PODNonlinearModel, var::Int, partidx::Int, point::Number, partvec::Vector)
+
+    abstol, reltol = m.disc_abs_width_tol, m.disc_rel_width_tol
+
+    lb_local, ub_local = partvec[partidx], partvec[partidx+1]
+    ub_touch, lb_touch = true, true
+
+    if point < ub_local && !isapprox(point, ub_local; atol=abstol) && abs(point-ub_local)/(1e-8+abs(ub_local)) > reltol # Insert new UB-based partition
+        ub_touch = false
+    end
+
+    if point > lb_local && !isapprox(point, lb_local; atol=abstol) && abs(point-lb_local)/(1e-8+abs(lb_local)) > reltol # Insert new LB-based partition
+        lb_touch = false
+    end
+
+    if ub_touch && lb_touch
+        distvec = [(j, partvec[j+1]-partvec[j]) for j in 1:length(partvec)-1]
+        sort!(distvec, by=x->x[2])
+        point_orig = point
+        pos = distvec[end][1]
+        lb_local = partvec[pos]
+        ub_local = partvec[pos+1]
+        isapprox(lb_local, ub_local;atol=m.tol) && return
+        chunk = (ub_local - lb_local) / m.disc_divert_chunks
+        point = lb_local + (ub_local - lb_local) / m.disc_divert_chunks
+        for i in 2:m.disc_divert_chunks
+            insert!(partvec, pos+1, lb_local + chunk * (m.disc_divert_chunks-(i-1)))
+        end
+        (m.loglevel > 99) && println("[DEBUG] !D! VAR$(var): SOL=$(round(point_orig,4))=>$(point) |$(round(lb_local,4)) | $(m.disc_divert_chunks) SEGMENTS | $(round(ub_local,4))|")
+    elseif ub_touch || lb_touch
+        lb_local = partvec[partidx]
+        ub_local = partvec[partidx+1]
+        chunk = (ub_local - lb_local) / m.disc_divert_chunks
+        point = lb_local + (ub_local - lb_local) / m.disc_divert_chunks
+        for i in 2:m.disc_divert_chunks
+            insert!(partvec, partidx+1, lb_local + chunk * (m.disc_divert_chunks-(i-1)))
+        end
+        (m.loglevel > 99) && println("[DEBUG] VAR$(var): SOL=$(round(point,4)) PARTITIONS=$(length(partvec)-1) |$(round(lb_local,4)) <- | $(m.disc_divert_chunks) SEGMENTS | -> $(round(ub_local,4))|")
+        return
+    else
+        (m.loglevel > 99) && println("[DEBUG] VAR$(var): SOL=$(round(point,4)), PARTITIONS=$(length(partvec)-1) |$(round(lb_local,4)) <- | * | -> $(round(ub_local,4))|")
+        insert!(partvec, partidx+1, point)
+        return
+    end
+
+    return
+end
+
 
 """
     add_discretization(m::PODNonlinearModel; use_disc::Dict, use_solution::Vector)
@@ -243,7 +317,7 @@ function add_adaptive_partition(m::PODNonlinearModel;kwargs...)
         if m.var_type[i] == :Cont
             i in processed && continue
             point = correct_point(m, discretization[i], point, i)
-            for j in 1:λCnt
+            for j in 1:(λCnt-1)
                 if point >= discretization[i][j] && point <= discretization[i][j+1]  # Locating the right location
                     radius = calculate_radius(discretization[i], j, ratio)
                     insert_partition(m, i, j, point, radius, discretization[i])
