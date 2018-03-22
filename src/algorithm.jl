@@ -38,7 +38,7 @@ function global_solve(m::PODNonlinearModel)
         check_exit(m) && break                  # Detect optimality termination
         algorithm_automation(m)                 # Automated adjustments
         add_partition(m)                        # Add extra discretizations
-        # conflict_analysis(m)                    # EXPERIMENTAL CODE
+        m.arc_consistency && conflict_analysis(m)                    # EXPERIMENTAL CODE
     end
 
     return
@@ -58,6 +58,11 @@ function presolve(m::PODNonlinearModel)
     # Possible solver status, return error when see different
     status_pass = [:Optimal, :Suboptimal, :UserLimit, :LocalOptimal]
     status_reroute = [:Infeasible, :Infeasibles]
+
+    # Root Relaxation
+    create_bounding_mip(m)
+    bounding_solve(m)
+    update_opt_gap(m)
 
     if m.status[:local_solve] in status_pass
         m.loglevel > 0 && println("local solver returns feasible point")
@@ -109,11 +114,6 @@ function check_exit(m::PODNonlinearModel)
     # Infeasibility check
     m.status[:bounding_solve] == :Infeasible && return true
     m.feasibility_mode && m.status[:feasible_solution] == :Detected && return true
-
-    # Feasibility mode
-    if m.feasibility_mode
-        m.best_bound > 1e-6 && return true
-    end
 
     # Unbounded check
     m.status[:bounding_solve] == :Unbounded && return true
@@ -266,8 +266,8 @@ function bounding_solve(m::PODNonlinearModel)
     if status in status_solved
         (status == :Optimal) ? candidate_bound = m.model_mip.objVal : candidate_bound = m.model_mip.objBound
         candidate_bound_sol = [round.(getvalue(Variable(m.model_mip, i)), 6) for i in 1:(m.num_var_orig+m.num_var_linear_mip+m.num_var_nonlinear_mip)]
-        # Experimental code
-        measure_relaxed_deviation(m, sol=candidate_bound_sol)
+        m.feasibility_mode && println("Evaluated Original Objective $(MathProgBase.eval_f(m.d_orig, candidate_bound_sol[1:m.num_var_orig]))")
+        measure_relaxed_deviation(m, sol=candidate_bound_sol) # Experimental code
         if m.disc_consecutive_forbid > 0
             m.bound_sol_history[mod(m.logs[:n_iter]-1, m.disc_consecutive_forbid)+1] = copy(candidate_bound_sol) # Requires proper offseting
         end

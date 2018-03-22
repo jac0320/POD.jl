@@ -45,19 +45,26 @@ function measure_relaxed_deviation(m::PODNonlinearModel;sol=nothing)
     isempty(sol) && return
 
     dev = []
+    vars = Set()
     for k in keys(m.nonconvex_terms)
         y_idx = m.nonconvex_terms[k][:y_idx]
         y_hat = sol[y_idx]
         y_val = m.nonconvex_terms[k][:evaluator](m.nonconvex_terms[k], sol)
         push!(dev, (y_idx, abs(y_hat-y_val), y_hat, y_val, m.nonconvex_terms[k][:var_idxs]))
+        if abs(y_hat-y_val) > 1e-4
+            for i in m.nonconvex_terms[k][:var_idxs]
+                push!(vars, i)
+            end
+        end
     end
 
     sort!(dev, by=x->x[2])
-
     for i in dev
-        m.loglevel > 99 && println("Y-VAR$(i[1]): DIST=$(i[2]) || Y-hat = $(i[3]), Y-val = $(i[4]) || COMP $(i[5])")
+        m.loglevel > 149 && println("Y-VAR$(i[1]): DIST=$(i[2]) || Y-hat = $(i[3]), Y-val = $(i[4]) || COMP $(i[5])")
     end
 
+    m.disc_vars = sort([i for i in vars])
+    println("Reselected DISC VARS $(length(m.disc_vars))")
     return
 end
 

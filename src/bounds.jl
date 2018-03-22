@@ -1,10 +1,27 @@
 function conflict_analysis(m::PODNonlinearModel)
 
     # Perform Bound Analyses on Discretized Variables
-    m.feasibility_mode ? init_slackness_arc_model(m) : init_optimal_arc_model(m)
+    # m.feasibility_mode ? init_slackness_arc_model(m) : init_optimal_arc_model(m)
+    init_optimal_arc_model(m)
+
+    assignment = Dict(i=>Set() for i in 1:m.num_constr_orig)
+    for k in keys(m.nonconvex_terms)
+        for i in m.nonconvex_terms[k][:constr_id]
+            for var in m.nonconvex_terms[k][:var_idxs]
+                push!(assignment[i], var)
+            end
+        end
+    end
+
     cuts = Dict()
-    arc_consistency(m, [], [], copy(m.disc_vars), cuts)
+    for i in keys(assignment)
+        if !isempty(assignment[i])
+            println("Pivot-AC on $([i for i in assignment[i]])")
+            arc_consistency(m, [], [], [i for i in assignment[i]], Set(), cuts)
+        end
+    end
     @show cuts
+
     error("STOP")
     return
 end
@@ -21,7 +38,6 @@ function init_optimal_arc_model(m::PODNonlinearModel)
 
     base_discretization = flatten_discretization(deepcopy(m.discretization))
     create_bounding_mip(m, use_disc=base_discretization)
-    @objective(m.model_mip, Min, 0)
     if m.status[:feasible_solution] == :Detected
         m.sense_orig == :Min ? @constraint(m.model_mip, m.model_mip.obj >= m.best_obj) : @constraint(m.model_mip, m.model_mip.obj <= m.best_obj)
     end
@@ -46,7 +62,7 @@ function switch_off_partition(m::PODNonlinearModel, var_ind::Int)
     return
 end
 
-function arc_consistency(m::PODNonlinearModel, var_looked=[], partidx=[], var_left=[], cuts=Dict())
+function arc_consistency(m::PODNonlinearModel, var_looked=[], partidx=[], var_left=[], examined=Set(), cuts=Dict())
 
     # Solve Bounding Model
     # Tune the integer variables lower bound, solve relaxation
@@ -55,31 +71,15 @@ function arc_consistency(m::PODNonlinearModel, var_looked=[], partidx=[], var_le
 
         if arc_model_status in [:Optimal, :UserObjLimit, :UserLimit, :Suboptimal]
             arc_model_obj = m.model_mip.objVal
-            if m.feasibility_mode
-                if arc_model_obj > m.tol
-                    cut = Set()
-                    for i in 1:length(var_looked)
-                        push!(cut, (var_looked[i], partidx[i]))
-                    end
-                    println("VAR-PATH $(var_looked) || PART-PATH $(partidx) || $(arc_model_status) || $(arc_model_obj)")
-                    println("Cut Generated $(cut)")
-                    cuts[cut] = true
-                    return
-                end
-            end
+            println("VAR-PATH $(var_looked) || PART-PATH $(partidx) || $(arc_model_status) || $(arc_model_obj)")
         elseif arc_model_status in [:Infeasible, :InfeasibleOrUnbounded]
-            if m.feasibility_mode
-                print_iis_gurobi(m.model_mip)
-                error("STOP")
-            else
-                cut = Set()
-                for i in 1:length(var_looked)
-                    push!(cut, (var_looked[i], partidx[i]))
-                end
-                println("Cut Generated $(cut)")
-                cuts[cut] = true
-                return
+            cut = Set()
+            for i in 1:length(var_looked)
+                push!(cut, (var_looked[i], partidx[i]))
             end
+            println("Cut Generated $(cut)")
+            cuts[cut] = true
+            return
         else
             error("I don't know how to handle this $(arc_model_status) status during arc_backtracking")
         end
@@ -92,13 +92,17 @@ function arc_consistency(m::PODNonlinearModel, var_looked=[], partidx=[], var_le
             if !(var in var_looked) # Exclude the var for non-repeating procedures
                 PCnt = length(m.discretization[var]) - 1
                 push!(var_looked, var)
-                for i in 1:PCnt
-                    switch_on_partition(m, var_looked[end], i)
-                    push!(partidx, i)
-                    arc_consistency(m, var_looked, partidx, var_left, cuts)
-                    pop!(partidx)
+                var_path = Set(i for i in var_looked)
+                if !(var_path in examined)
+                    push!(examined, var_path)
+                    for i in 1:PCnt
+                        switch_on_partition(m, var_looked[end], i)
+                        push!(partidx, i)
+                        arc_consistency(m, var_looked, partidx, var_left, examined, cuts)
+                        pop!(partidx)
+                    end
+                    switch_off_partition(m, var)
                 end
-                switch_off_partition(m, var)
                 pop!(var_looked)
             end
         end

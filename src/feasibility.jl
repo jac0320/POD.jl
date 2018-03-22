@@ -5,10 +5,11 @@ function create_bounding_slackness_mip(m::PODNonlinearModel; use_disc=nothing)
     m.model_mip = Model(solver=m.mip_solver) # Construct JuMP Model
     start_build = time()
     # ------- Model Construction ------ #
-    amp_post_vars(m, enable_slack=true)                             # Post original and lifted variables
-    amp_post_lifted_constraints(m, enable_slack=true)             # Post lifted constraints
+    amp_post_vars(m, enable_slack=false)                            # Post original and lifted variables
+    amp_post_lifted_constraints(m, enable_slack=false)              # Post lifted constraints
     amp_post_convexification(m, use_disc=discretization)            # Convexify problem
-    amp_post_slackness_objective(m)                                 # Post objective
+    # amp_post_slackness_objective(m)                                 # Post objective
+    amp_post_lifted_objective(m)
     # --------------------------------- #
     cputime_build = time() - start_build
     m.logs[:total_time] += cputime_build
@@ -57,7 +58,8 @@ function amp_post_slackness_objective(m::PODNonlinearModel)
 
     slack_start = m.num_var_orig + m.num_var_linear_mip + m.num_var_nonlinear_mip + 1
     slack_end = m.num_var_orig + m.num_slack_vars
-    @objective(m.model_mip, Min, sum(Variable(m.model_mip, i) for i in slack_start:slack_end))
+    # @objective(m.model_mip, Min, sum(Variable(m.model_mip, i) for i in slack_start:slack_end))
+    @objective(m.model_mip, Min, 0)
 
     return
 end
