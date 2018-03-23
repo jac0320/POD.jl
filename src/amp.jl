@@ -1,14 +1,14 @@
-function create_bounding_mip(m::PODNonlinearModel; use_disc=nothing)
+function create_bounding_mip(m::PODNonlinearModel; use_disc=nothing, warmstart=true, cuts=true)
 
     use_disc == nothing ? discretization = m.discretization : discretization = use_disc
 
     m.model_mip = Model(solver=m.mip_solver) # Construct JuMP Model
     start_build = time()
     # ------- Model Construction ------ #
-    amp_post_vars(m)                                                # Post original and lifted variables
-    amp_post_lifted_constraints(m)                                  # Post lifted constraints
-    amp_post_lifted_objective(m)                                    # Post objective
-    amp_post_convexification(m, use_disc=discretization)            # Convexify problem
+    amp_post_vars(m)                                      # Post original and lifted variables
+    amp_post_lifted_constraints(m)                        # Post lifted constraints
+    amp_post_lifted_objective(m)                          # Post objective
+    amp_post_convexification(m, use_disc=discretization, warmstart=warmstart, cuts=cuts)
     # --------------------------------- #
     cputime_build = time() - start_build
     m.logs[:total_time] += cputime_build
@@ -23,7 +23,7 @@ end
 warpper function to convexify the problem for a bounding model. This function talks to nonconvex_terms and convexification methods
 to finish the last step required during the construction of bounding model.
 """
-function amp_post_convexification(m::PODNonlinearModel; use_disc=nothing)
+function amp_post_convexification(m::PODNonlinearModel; use_disc=nothing, warmstart=true, cuts=true)
 
     use_disc == nothing ? discretization = m.discretization : discretization = use_disc
 
@@ -31,8 +31,8 @@ function amp_post_convexification(m::PODNonlinearModel; use_disc=nothing)
         eval(m.method_convexification[i])(m)
     end
 
-    amp_post_mccormick(m, use_disc=discretization)          # handles all bi-linear and monomial convexificaitons
-    amp_post_convhull(m, use_disc=discretization)           # convex hull representation
+    amp_post_mccormick(m, use_disc=discretization)              # handles all bi-linear and monomial convexificaitons
+    amp_post_convhull(m, use_disc=discretization, warmstart=warmstart, cuts=cuts)    # convex hull representation
 
     is_fully_convexified(m) # Exam to see if all non-linear terms have been convexificed
 

@@ -134,16 +134,18 @@ end
 """
     @docstring
 """
-function insert_timeleft_symbol(options, val::Float64, keywords::Symbol, timeout; options_string_type=1)
+function insert_timeleft_symbol(options, val::Any, keywords::Symbol, timeout; options_string_type=1)
 
     for i in 1:length(options)
         if options_string_type == 1
             if keywords in collect(options[i])
                 deleteat!(options, i)
+                break
             end
         elseif options_string_type == 2
             if keywords == split(options[i],"=")[1]
                 deleteat!(options, i)
+                break
             end
         end
     end
@@ -407,25 +409,6 @@ function get_active_partition_idx(discretization::Dict, val::Float64, idx::Int; 
     return 1
 end
 
-"""
-
-    ncvar_collect_nodes(m:PODNonlinearModel)
-
-A built-in method for selecting variables for discretization. It selects all variables in the nonlinear terms.
-
-"""
-function ncvar_collect_nodes(m::PODNonlinearModel;getoutput=false)
-
-    # Pick variables that is bound width more than tolerance length
-    if getoutput
-        return [i for i in m.candidate_disc_vars]
-    else
-        m.disc_vars = [i for i in m.candidate_disc_vars]
-        m.num_var_disc_mip = length(m.disc_vars)
-    end
-
-    return
-end
 
 function eval_objective(m::PODNonlinearModel; svec::Vector=[])
 
@@ -485,56 +468,6 @@ function reset_branch_priority(m::PODNonlinearModel)
     return
 end
 
-"""
-    Reconsideration required
-"""
-function ncvar_collect_arcs(m::PODNonlinearModel, nodes::Vector)
-
-    arcs = Set()
-
-    for k in keys(m.nonconvex_terms)
-        if m.nonconvex_terms[k][:nonlinear_type] == :BILINEAR
-            arc = [i.args[2] for i in k]
-            length(arc) == 2 && push!(arcs, sort(arc))
-        elseif m.nonconvex_terms[k][:nonlinear_type] == :MONOMIAL
-            @assert isa(m.nonconvex_terms[k][:var_idxs][1], Int)
-            varidx = m.nonconvex_terms[k][:var_idxs][1]
-            push!(arcs, [varidx, varidx;])
-        elseif m.nonconvex_terms[k][:nonlinear_type] == :MULTILINEAR
-            varidxs = m.nonconvex_terms[k][:var_idxs]
-            for i in 1:length(varidxs)
-                for j in 1:length(varidxs)
-                    if i != j
-                        push!(arcs, sort([varidxs[i], varidxs[j];]))
-                    end
-                end
-            end
-            if length(varidxs) == 1
-                push!(arcs, sort([varidxs[1], varidxs[1];]))
-            end
-        elseif m.nonconvex_terms[k][:nonlinear_type] == :INTLIN
-            var_idxs = copy(m.nonconvex_terms[k][:var_idxs])
-            push!(arcs, sort(var_idxs))
-        elseif m.nonconvex_terms[k][:nonlinear_type] == :INTPROD
-            var_idxs = m.nonconvex_terms[k][:var_idxs]
-            for i in 1:length(var_idxs)
-                for j in 1:length(var_idxs)
-                    i != j && push!(arcs, sort([var_idxs[i], var_idxs[j];]))
-                end
-            end
-        elseif m.nonconvex_terms[k][:nonlinear_type] in [:cos, :sin]
-            @assert length(m.nonconvex_terms[k][:var_idxs]) == 1
-            var_idx = m.nonconvex_terms[k][:var_idxs][1]
-            push!(arcs, [var_idx, var_idx;])
-        elseif m.nonconvex_terms[k][:nonlinear_type] in [:BININT, :BINLIN, :BINPROD]
-            continue
-        else
-            error("[EXCEPTION] Unexpected nonlinear term when building discvar graph.")
-        end
-    end
-
-    return arcs
-end
 
 """
     Special funtion for debugging bounding models
@@ -831,6 +764,19 @@ function update_mip_time_limit(m::PODNonlinearModel; kwargs...)
         insert_timeleft_symbol(m.mip_solver.opts, timelimit,:tm_lim,m.timeout)
     elseif m.mip_solver_id == "Pajarito"
         (timelimit < Inf) && (m.mip_solver.timeout = timelimit)
+    else
+        error("Needs support for this MIP solver")
+    end
+
+    return
+end
+
+function mip_solver_verbosity(m::PODNonlinearModel, verbosity::Int)
+
+    if m.mip_solver_id == "CPLEX"
+        insert_timeleft_symbol(m.mip_solver.options,verbosity,:CPX_PARAM_SCRIND,m.timeout)
+    elseif m.mip_solver_id == "Gurobi"
+        insert_timeleft_symbol(m.mip_solver.options,verbosity,:OutputFlag,m.timeout)
     else
         error("Needs support for this MIP solver")
     end

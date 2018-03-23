@@ -8,7 +8,7 @@ function create_bounding_slackness_mip(m::PODNonlinearModel; use_disc=nothing)
     amp_post_vars(m, enable_slack=false)                            # Post original and lifted variables
     amp_post_lifted_constraints(m, enable_slack=false)              # Post lifted constraints
     amp_post_convexification(m, use_disc=discretization)            # Convexify problem
-    # amp_post_slackness_objective(m)                                 # Post objective
+    # amp_post_slackness_objective(m)                               # Post objective
     amp_post_lifted_objective(m)
     # --------------------------------- #
     cputime_build = time() - start_build

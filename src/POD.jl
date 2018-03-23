@@ -26,6 +26,7 @@ include("operators.jl")
 
 # Main Algorithmic Process
 include("algorithm.jl")
+include("vars.jl")
 include("presolve.jl")
 include("amp.jl")
 include("embedding.jl")

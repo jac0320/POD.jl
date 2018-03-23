@@ -3,27 +3,39 @@ function conflict_analysis(m::PODNonlinearModel)
     # Perform Bound Analyses on Discretized Variables
     # m.feasibility_mode ? init_slackness_arc_model(m) : init_optimal_arc_model(m)
     init_optimal_arc_model(m)
+    mip_solver_verbosity(m, 0)
+    assignment = init_ac_assignments(m)
 
-    assignment = Dict(i=>Set() for i in 1:m.num_constr_orig)
+    m.arc_consistency_cuts = Dict()
+    checked = Set()
+    for i in keys(assignment)
+        println("Pivot-AC on $(i)")
+        arc_consistency(m, [], [], i, Set(), m.arc_consistency_cuts)
+    end
+    mip_solver_verbosity(m, 1)
+    return
+end
+
+function init_ac_assignments(m::PODNonlinearModel)
+
+    constr_pivot_assignment = Dict(i=>Set() for i in 1:m.num_constr_orig)
     for k in keys(m.nonconvex_terms)
         for i in m.nonconvex_terms[k][:constr_id]
             for var in m.nonconvex_terms[k][:var_idxs]
-                push!(assignment[i], var)
+                push!(constr_pivot_assignment[i], var)
             end
         end
     end
 
-    cuts = Dict()
-    for i in keys(assignment)
-        if !isempty(assignment[i])
-            println("Pivot-AC on $([i for i in assignment[i]])")
-            arc_consistency(m, [], [], [i for i in assignment[i]], Set(), cuts)
+    assignment = Dict()
+    for (cnt,i) in enumerate(keys(constr_pivot_assignment))
+        if !isempty(constr_pivot_assignment[i])
+            assignment[sort([j for j in constr_pivot_assignment[i]])] = cnt
         end
     end
-    @show cuts
 
-    error("STOP")
-    return
+    m.loglevel > 0 && println("Generated $(length(assignment)) Arc-Consistency Tasks.")
+    return assignment
 end
 
 function init_slackness_arc_model(m::PODNonlinearModel)
@@ -37,7 +49,7 @@ end
 function init_optimal_arc_model(m::PODNonlinearModel)
 
     base_discretization = flatten_discretization(deepcopy(m.discretization))
-    create_bounding_mip(m, use_disc=base_discretization)
+    create_bounding_mip(m, use_disc=base_discretization, cuts=false)
     if m.status[:feasible_solution] == :Detected
         m.sense_orig == :Min ? @constraint(m.model_mip, m.model_mip.obj >= m.best_obj) : @constraint(m.model_mip, m.model_mip.obj <= m.best_obj)
     end
@@ -66,19 +78,19 @@ function arc_consistency(m::PODNonlinearModel, var_looked=[], partidx=[], var_le
 
     # Solve Bounding Model
     # Tune the integer variables lower bound, solve relaxation
+
     if !isempty(var_looked)
         arc_model_status = solve(m.model_mip, suppress_warnings=true)
-
         if arc_model_status in [:Optimal, :UserObjLimit, :UserLimit, :Suboptimal]
             arc_model_obj = m.model_mip.objVal
-            println("VAR-PATH $(var_looked) || PART-PATH $(partidx) || $(arc_model_status) || $(arc_model_obj)")
+            m.loglevel > 199 && println("VAR-PATH $(var_looked) || PART-PATH $(partidx) || $(arc_model_status) || $(arc_model_obj)")
         elseif arc_model_status in [:Infeasible, :InfeasibleOrUnbounded]
-            cut = Set()
-            for i in 1:length(var_looked)
-                push!(cut, (var_looked[i], partidx[i]))
-            end
-            println("Cut Generated $(cut)")
-            cuts[cut] = true
+            @assert length(var_looked) == length(partidx)
+            D = length(var_looked)
+            one_cut = [(var_looked[i], partidx[i]) for i in 1:D]
+            sort!(one_cut, by=x->x[1])
+            println("Cut Generated $(one_cut)")
+            cuts[one_cut] = true
             return
         else
             error("I don't know how to handle this $(arc_model_status) status during arc_backtracking")

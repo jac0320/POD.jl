@@ -61,6 +61,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     # Domain Reduction
     presolve_bp::Bool                                           # Conduct basic bound propagation
     arc_consistency::Bool                                       # Turn ON/OFF the capability to do arc consistency or not
+    arc_consistency_cuts::Dict                                  # Place Holder for AC cuts
     arc_consistency_depth::Int                                  # Maximum recursive depth
     user_parameters::Dict                                       # Additional parameters used for user-defined functional inputs
 
@@ -313,9 +314,10 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.num_constr_convex = 0
         m.constr_structure = []
         m.best_bound_sol = []
-        m.bound_sol_history = []
 
         m.bound_sol_history = Vector{Vector{Float64}}(m.disc_consecutive_forbid)
+
+        m.arc_consistency_cuts = Dict()
 
         m.best_obj = Inf
         m.best_bound = -Inf
@@ -773,6 +775,9 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
 
     # Feasibility Mode Preprocessing
     m.feasibility_mode && initialize_slackness_link(m)
+    if m.feasibility_mode
+        m.convhull_warmstart = false
+    end
 
     # Initialize the solution pool
     m.bound_sol_pool = initialize_solution_pool(m, 0)  # Initialize the solution pool

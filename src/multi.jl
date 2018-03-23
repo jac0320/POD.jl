@@ -1,7 +1,6 @@
-function amp_post_convhull(m::PODNonlinearModel; kwargs...)
+function amp_post_convhull(m::PODNonlinearModel; use_disc=nothing, warmstart=true, cuts=true)
 
-    options = Dict(kwargs)
-    haskey(options, :use_disc) ? d = options[:use_disc] : d = m.discretization
+    use_disc == nothing ? d = m.discretization : d = use_disc
 
     # Variable holders
     λ = Dict()  # Extreme points and multipliers
@@ -40,7 +39,8 @@ function amp_post_convhull(m::PODNonlinearModel; kwargs...)
     end
 
     # Experimental code for Warm starting
-    m.convhull_warmstart && !m.convhull_ebd && !isempty(m.best_bound_sol) && amp_warmstart_α(m, α)
+    warmstart & m.convhull_warmstart && !m.convhull_ebd && !isempty(m.best_bound_sol) && amp_warmstart_α(m, α)
+    cuts && amp_post_ac_cuts(m, α)
 
     return
 end
@@ -400,6 +400,16 @@ function amp_warmstart_α(m::PODNonlinearModel, α::Dict)
             m.bound_sol_pool[:stat][ws_idx] = :Warmstarter
             m.loglevel > 0 && println("!! WARM START bounding MIP using POOL SOL $(ws_idx) OBJ=$(m.bound_sol_pool[:obj][ws_idx])")
         end
+    end
+
+    return
+end
+
+function amp_post_ac_cuts(m::PODNonlinearModel, α::Dict)
+
+    for c in keys(m.arc_consistency_cuts)
+        D = length(c)
+        @constraint(m.model_mip, sum(α[i[1]][i[2]] for i in c) <= D - 1)
     end
 
     return
