@@ -29,16 +29,16 @@ function global_solve(m::PODNonlinearModel)
     while !check_exit(m)
         m.logs[:n_iter] += 1
         m.feasibility_mode ? create_bounding_slackness_mip(m) : create_bounding_mip(m)  # Build the relaxation model
-        bounding_solve(m)                       # Solve the relaxation model
-        update_opt_gap(m)                       # Update optimality gap
-        check_exit(m) && break                  # Feasibility check
-        m.loglevel > 0 && logging_row_entry(m)  # Logging
-        local_solve(m)                          # Solve local model for feasible solution
-        update_opt_gap(m)                       # Update optimality gap
-        check_exit(m) && break                  # Detect optimality termination
-        algorithm_automation(m)                 # Automated adjustments
-        add_partition(m)                        # Add extra discretizations
-        m.arc_consistency && conflict_analysis(m)                    # EXPERIMENTAL CODE
+        bounding_solve(m)                                            # Solve the relaxation model
+        update_opt_gap(m)                                            # Update optimality gap
+        check_exit(m) && break                                       # Feasibility check
+        m.loglevel > 0 && logging_row_entry(m)                       # Logging
+        local_solve(m)                                               # Solve local model for feasible solution
+        update_opt_gap(m)                                            # Update optimality gap
+        check_exit(m) && break                                       # Detect optimality termination
+        algorithm_automation(m)                                      # Automated adjustments
+        add_partition(m)                                             # Add extra discretizations
+        m.arc_consistency && conflict_analysis(m)                    # Arc Consistency to Generate Residual
     end
 
     return

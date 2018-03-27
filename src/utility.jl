@@ -50,7 +50,8 @@ function measure_relaxed_deviation(m::PODNonlinearModel;sol=nothing)
         y_idx = m.nonconvex_terms[k][:y_idx]
         y_hat = sol[y_idx]
         y_val = m.nonconvex_terms[k][:evaluator](m.nonconvex_terms[k], sol)
-        push!(dev, (y_idx, abs(y_hat-y_val), y_hat, y_val, m.nonconvex_terms[k][:var_idxs]))
+        y_interval = basic_monomial_bounds(m, k, m.discretization, sol)
+        push!(dev, (y_idx, abs(y_hat-y_val), y_hat, y_val, m.nonconvex_terms[k][:var_idxs], y_interval[1], y_interval[2]))
         if abs(y_hat-y_val) > 1e-4
             for i in m.nonconvex_terms[k][:var_idxs]
                 push!(vars, i)
@@ -60,7 +61,7 @@ function measure_relaxed_deviation(m::PODNonlinearModel;sol=nothing)
 
     sort!(dev, by=x->x[2])
     for i in dev
-        m.loglevel > 149 && println("Y-VAR$(i[1]): DIST=$(i[2]) || Y-hat = $(i[3]), Y-val = $(i[4]) || COMP $(i[5])")
+        m.loglevel > 199 && println("Y-VAR$(i[1]): DIST=$(i[2]) || Y-hat = $(i[3]), Y-val = $(i[4]) || [$(i[6]), $(i[7])] || COMP $(i[5])")
     end
 
     m.disc_vars = sort([i for i in vars])
@@ -98,6 +99,20 @@ function show_solution(m::JuMP.Model)
     for i in 1:length(m.colNames)
         println("$(m.colNames[i])=$(m.colVal[i])")
     end
+    return
+end
+
+function find_local_partition(part::Vector, sol::Float64)
+
+    P = length(part) - 1
+    for i in 1:P
+        if sol >= part[i] && sol <= part[i+1]
+            return [part[i], part[i+1];]
+        end
+    end
+
+    error("Solution didn't showed in any partition")
+
     return
 end
 
@@ -292,6 +307,7 @@ function collect_lb_pool(m::PODNonlinearModel)
             Gurobi.set_int_param!(m.model_mip.internalModel.inner, "SolutionNumber", i-1)
             s[:sol][i] = Gurobi.get_dblattrarray(m.model_mip.internalModel.inner, "Xn", 1, s[:len])
             s[:obj][i] = Gurobi.get_dblattr(m.model_mip.internalModel.inner, "PoolObjVal")
+            s[:obj][i] = MathProgBase.eval_f(m.d_orig, s[:sol][i][1:m.num_var_orig])
         elseif m.mip_solver_id == "CPLEX"
             error("No implementation for CPLEX")
         end
@@ -446,7 +462,7 @@ function initialize_solution_pool(m::PODNonlinearModel, cnt::Int)
     s[:disc] = Vector{Dict}(cnt)                    # Discretization
     s[:stat] = [:Alive for i in 1:cnt]              # Solution status
     s[:iter] = [m.logs[:n_iter] for i in 1:cnt]     # Iteration collected
-    s[:ubstart] = [false for i in 1:cnt]           # Solution used for ub multistart
+    s[:ubstart] = [false for i in 1:cnt]            # Solution used for ub multistart
 
     return s
 end

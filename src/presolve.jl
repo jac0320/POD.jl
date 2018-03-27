@@ -12,10 +12,10 @@ Currently, two bounding tightening method is implemented [`minmax_bound_tighteni
     If no local feasible solution is obtained, the algorithm defaults to bound-tightening with basic McCormick
 
 """
-function bound_tightening(m::PODNonlinearModel; use_bound = true, kwargs...)
+function bound_tightening(m::PODNonlinearModel; use_bound=true, kwargs...)
 
     m.presolve_bt || return
-
+    mip_solver_verbosity(m, 0)
     if m.presolve_bt_algo == 1
         minmax_bound_tightening(m, use_bound=use_bound)
     elseif m.presolve_bt_algo == 2
@@ -25,9 +25,25 @@ function bound_tightening(m::PODNonlinearModel; use_bound = true, kwargs...)
     else
         error("Unrecognized bound-tightening algorithm")
     end
+    mip_solver_verbosity(m, 1)
+    return
+end
+
+function constraint_tightening(m::PODNonlinearModel; use_bound=true)
+
+    m.presolve_ct || return
+
+    mip_solver_verbosity(m, 0)
+    minmax_constraint_tightening(m, use_bound=use_bound)
+    mip_solver_verbosity(m, 1)
 
     return
 end
+
+function minmax_constraint_tightening(m::PODNonlinearModel, use_bound=true)
+
+end
+
 
 """
 
@@ -114,14 +130,14 @@ function minmax_bound_tightening(m::PODNonlinearModel; use_bound = true, timelim
         # for var_idx in m.candidate_disc_vars
         for var_idx in keys(temp_bounds)
             if abs(temp_bounds[var_idx][1] - discretization[var_idx][1])/(m.tol+abs(discretization[var_idx][1])) >= m.presolve_bt_width_tol
-                (m.loglevel > 99) && print("+")
-                m.loglevel > 99 && println("[DEBUG] VAR $(var_idx) LB contracted $(discretization[var_idx][1])=>$(temp_bounds[var_idx][1])")
+                (m.loglevel > 199) && print("+")
+                m.loglevel > 199 && println("[DEBUG] VAR $(var_idx) LB contracted $(discretization[var_idx][1])=>$(temp_bounds[var_idx][1])")
                 keeptightening = true # Continue to perform the next iteration
                 discretization[var_idx][1] = temp_bounds[var_idx][1]
             end
             if abs(discretization[var_idx][end] - temp_bounds[var_idx][end])/(m.tol+abs(temp_bounds[var_idx][end])) >= m.presolve_bt_width_tol
-                (m.loglevel > 99) && print("+")
-                m.loglevel > 99 && println("[DEBUG] VAR $(var_idx) UB contracted $(discretization[var_idx][end])=>$(temp_bounds[var_idx][end])")
+                (m.loglevel > 199) && print("+")
+                m.loglevel > 199 && println("[DEBUG] VAR $(var_idx) UB contracted $(discretization[var_idx][end])=>$(temp_bounds[var_idx][end])")
                 keeptightening = true
                 discretization[var_idx][end] = temp_bounds[var_idx][end]
             end
@@ -138,18 +154,18 @@ function minmax_bound_tightening(m::PODNonlinearModel; use_bound = true, timelim
         time() - st > timelimit && break
     end
 
-    (m.loglevel > 0) && println("\nfinished bound tightening in $(m.logs[:bt_iter]) iterations, applying tighten bounds")
+    (m.loglevel > 99) && println("\nfinished bound tightening in $(m.logs[:bt_iter]) iterations, applying tighten bounds")
 
     m.l_var_tight, m.u_var_tight = update_var_bounds(discretization)
     m.discretization = add_adaptive_partition(m, use_solution=m.best_sol)
 
-    for i in m.disc_vars
-        contract_ratio = round(1-abs(m.l_var_tight[i] - m.u_var_tight[i])/abs(l_var_orig[i] - u_var_orig[i]),2)*100
-        if m.loglevel > 0 && contract_ratio > 0.0001
-            println("[DEBUG] VAR $(i) BOUND contracted $(contract_ratio)% |$(round(l_var_orig[i],4)) --> | $(round(m.l_var_tight[i],4)) - $(round(m.u_var_tight[i],4)) | <-- $(round(u_var_orig[i],4)) |")
+    for i in 1:m.num_var_orig
+        contract_ratio = round(1-abs(m.l_var_tight[i] - m.u_var_tight[i])/abs(l_var_orig[i] - u_var_orig[i]),4)
+        if m.loglevel > 99
+            println("[DEBUG] VAR $(i) BOUND contracted $(contract_ratio*100)% |$(round(l_var_orig[i],4)) --> | $(round(m.l_var_tight[i],4)) - $(round(m.u_var_tight[i],4)) | <-- $(round(u_var_orig[i],4)) |")
         end
     end
-    (m.loglevel > 0) && print("\n")
+    (m.loglevel > 99) && print("\n")
 
     return
 end

@@ -17,6 +17,44 @@ function create_bounding_mip(m::PODNonlinearModel; use_disc=nothing, warmstart=t
     return
 end
 
+function create_bounding_slackness_mip(m::PODNonlinearModel; use_disc=nothing, warmstart=true, cuts=true)
+
+    use_disc == nothing ? discretization = m.discretization : discretization = use_disc
+
+    m.model_mip = Model(solver=m.mip_solver) # Construct JuMP Model
+    start_build = time()
+    # ------- Model Construction ------ #
+    amp_post_vars(m, enable_slack=true)                            # Post original and lifted variables
+    amp_post_lifted_constraints(m, enable_slack=true)              # Post lifted constraints
+    amp_post_convexification(m, use_disc=discretization, warmstart=warmstart, cuts=cuts)
+                                                                   # Convexify problem
+    amp_post_slackness_objective(m)                                # Post objective
+    # --------------------------------- #
+    cputime_build = time() - start_build
+    m.logs[:total_time] += cputime_build
+    m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
+
+    return
+end
+
+function create_bounding_feasibility_mip(m::PODNonlinearModel; use_disc=nothing, warmstart=true, cuts=true)
+
+    use_disc == nothing ? discretization = m.discretization : discretization = use_disc
+
+    m.model_mip = Model(solver=m.mip_solver) # Construct JuMP Model
+    start_build = time()
+    # ------- Model Construction ------ #
+    amp_post_vars(m, enable_slack=true)                            # Post original and lifted variables
+    amp_post_lifted_constraints(m, enable_slack=true)              # Post lifted constraints
+    amp_post_convexification(m, use_disc=discretization, warmstart=warmstart, cuts=cuts)           # Convexify problem
+    amp_post_zero_objective(m)                                     # Post objective
+    # --------------------------------- #
+    cputime_build = time() - start_build
+    m.logs[:total_time] += cputime_build
+    m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
+
+end
+
 """
     amp_post_convexification(m::PODNonlinearModel; kwargs...)
 
@@ -80,6 +118,9 @@ function amp_post_lifted_constraints(m::PODNonlinearModel;enable_slack=false)
         if enable_slack
             if m.constr_structure[i] == :affine
                 amp_post_affine_slack_constraint(m, i)
+            elseif m.constr_structure[i] == :convex
+                warn("Support for convex constrint in feasibility mode is highly experimental.", once=true)
+                amp_post_convex_constraint(m.model_mip, m.bounding_constr_mip[i])
             else
                 error("Unknown constr_structure type $(m.constr_structure[i]). No support for convex constraints under feasibility_mode")
             end
