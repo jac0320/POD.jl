@@ -1,5 +1,3 @@
-__precompile__()
-
 module POD
 
 PODDEBUG = true
@@ -27,6 +25,8 @@ include("operators.jl")
 # Main Algorithmic Process
 include("algorithm.jl")
 include("vars.jl")
+include("solution.jl")
+include("measure.jl")
 include("presolve.jl")
 include("amp.jl")
 include("embedding.jl")
@@ -45,5 +45,6 @@ include("trigonometry.jl")
 
 # Othes
 include("log.jl")
+include("acpf.jl")
 
 end # module

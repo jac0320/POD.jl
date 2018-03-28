@@ -15,16 +15,23 @@ function conflict_analysis(m::PODNonlinearModel)
     return
 end
 
-function init_ac_assignments(m::PODNonlinearModel)
+function find_nlvar_in_constr(m::PODNonlinearModel)
 
-    constr_pivot_assignment = Dict(i=>Set() for i in 1:m.num_constr_orig)
+    nlvar_in_constr = Dict(i=>Set() for i in 0:m.num_constr_orig)
     for k in keys(m.nonconvex_terms)
         for i in m.nonconvex_terms[k][:constr_id]
             for var in m.nonconvex_terms[k][:var_idxs]
-                push!(constr_pivot_assignment[i], var)
+                push!(nlvar_in_constr[i], var)
             end
         end
     end
+
+    return nlvar_in_constr
+end
+
+function init_ac_assignments(m::PODNonlinearModel)
+
+    constr_pivot_assignment = find_nlvar_in_constr(m)
 
     assignment = Dict()
     for (cnt,i) in enumerate(keys(constr_pivot_assignment))
@@ -492,6 +499,47 @@ function update_var_bounds(discretization; kwargs...)
     for var_idx in keys(discretization)
         l_var[var_idx] = discretization[var_idx][1]
         u_var[var_idx] = discretization[var_idx][end]
+    end
+
+    return l_var, u_var
+end
+
+"""
+
+    fix_domains(m::PODNonlinearModel)
+
+This function is used to fix variables to certain domains during the local solve process in the [`global_solve`](@ref).
+More specifically, it is used in [`local_solve`](@ref) to fix binary and integer variables to lower bound solutions
+and discretizing varibles to the active domain according to lower bound solution.
+"""
+function fix_domains(m::PODNonlinearModel;discrete_sol=nothing, use_orig=false)
+
+    discrete_sol != nothing && @assert length(discrete_sol) >= m.num_var_orig
+
+    l_var = [m.l_var_tight[i] for i in 1:m.num_var_orig]
+    u_var = [m.u_var_tight[i] for i in 1:m.num_var_orig]
+
+    for i in 1:m.num_var_orig
+        if i in m.disc_vars && m.var_type[i] == :Cont
+            discrete_sol == nothing ? point = m.best_bound_sol[i] : point = discrete_sol[i]
+            PCnt = length(m.discretization[i]) - 1
+            for j in 1:PCnt
+                if point >= (m.discretization[i][j] - m.tol) && (point <= m.discretization[i][j+1] + m.tol)
+                    @assert j < length(m.discretization[i])
+                    use_orig ? l_var[i] = m.discretization[i][1] : l_var[i] = m.discretization[i][j]
+                    use_orig ? u_var[i] = m.discretization[i][end] : u_var[i] = m.discretization[i][j+1]
+                    break
+                end
+            end
+        elseif m.var_type[i] == :Bin || m.var_type[i] == :Int
+            if discrete_sol == nothing
+                l_var[i] = round(m.best_bound_sol[i])
+                u_var[i] = round(m.best_bound_sol[i])
+            else
+                l_var[i] = discrete_sol[i]
+                u_var[i] = discrete_sol[i]
+            end
+        end
     end
 
     return l_var, u_var

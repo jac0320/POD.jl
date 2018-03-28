@@ -63,7 +63,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     arc_consistency::Bool                                       # Turn ON/OFF the capability to do arc consistency or not
     arc_consistency_cuts::Dict                                  # Place Holder for AC cuts
     arc_consistency_depth::Int                                  # Maximum recursive depth
-    user_parameters::Dict                                       # Additional parameters used for user-defined functional inputs
+    user_parameters::Any                                        # Additional parameters used for user-defined functional inputs
+    extension::Any                                              # Extended data structure for dedicated applications
 
     # Features for Integer Problems (NOTE: no support for intlin problems)
     int_enable::Bool                                            # Convert integer problem into binary problem by flatten the choice of variable domain
@@ -394,7 +395,7 @@ type PODSolver <: MathProgBase.AbstractMathProgSolver
     arc_consistency::Bool
     arc_consistency_depth::Int
 
-    user_parameters::Dict
+    user_parameters::Any
     int_enable::Bool
     int_cumulative_disc::Bool
     int_fully_disc::Bool
@@ -463,6 +464,7 @@ function PODSolver(;
     arc_consistency_depth = 1,
 
     user_parameters = Dict(),
+    extension = nothing,
     int_enable = false,
     int_cumulative_disc = true,
     int_fully_disc = false,
@@ -784,6 +786,10 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
 
     # Record the initial solution from the warmstarting value, if any
     m.best_sol = m.d_orig.m.colVal
+
+    # ***** ACPF Treatment *****
+    m.extension = init_acpf_package(m)
+    # **************************
 
     # Initialize log
     logging_summary(m)

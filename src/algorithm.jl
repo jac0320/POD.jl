@@ -28,6 +28,7 @@ function global_solve(m::PODNonlinearModel)
 
     while !check_exit(m)
         m.logs[:n_iter] += 1
+        acpf_algorithm(m)
         m.feasibility_mode ? create_bounding_slackness_mip(m) : create_bounding_mip(m)  # Build the relaxation model
         bounding_solve(m)                                            # Solve the relaxation model
         update_opt_gap(m)                                            # Update optimality gap
@@ -268,7 +269,6 @@ function bounding_solve(m::PODNonlinearModel)
         (status == :Optimal) ? candidate_bound = m.model_mip.objVal : candidate_bound = m.model_mip.objBound
         candidate_bound_sol = [round.(getvalue(Variable(m.model_mip, i)), 6) for i in 1:(m.num_var_orig+m.num_var_linear_mip+m.num_var_nonlinear_mip)]
         m.feasibility_mode && println("Evaluated Original Objective $(MathProgBase.eval_f(m.d_orig, candidate_bound_sol[1:m.num_var_orig]))")
-        measure_relaxed_deviation(m, sol=candidate_bound_sol) # Experimental code
         if m.disc_consecutive_forbid > 0
             m.bound_sol_history[mod(m.logs[:n_iter]-1, m.disc_consecutive_forbid)+1] = copy(candidate_bound_sol) # Requires proper offseting
         end

@@ -1036,28 +1036,6 @@ function basic_monomial_bounds(m::PODNonlinearModel, k::Any)
     return
 end
 
-function basic_monomial_bounds(m::PODNonlinearModel, nlk::Any, d::Dict, sol::Vector)
-
-    lifted_idx = m.nonconvex_terms[nlk][:lifted_var_ref].args[2]
-
-    cnt = 0
-    bound = []
-    for var in nlk
-        cnt += 1
-        var_idx = var.args[2]
-        var_bounds = find_local_partition(d[var_idx], sol[var_idx])
-        if cnt == 1
-            bound = copy(var_bounds)
-        elseif cnt == 2
-            bound = bound * var_bounds'
-        else
-            bound = diag(bound) * var_bounds'
-        end
-    end
-
-    return [minimum(bound), maximum(bound);]
-end
-
 function basic_monomial_bounds(m::PODNonlinearModel, nlk::Any, d::Dict)
 
     lifted_idx = m.nonconvex_terms[nlk][:lifted_var_ref].args[2]

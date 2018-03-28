@@ -168,3 +168,135 @@ function ncvar_collect_arcs(m::PODNonlinearModel, nodes::Vector)
 
     return arcs
 end
+
+"""
+    Tell what would be the variable type of a lifted term.
+    This function is with limited functionality
+    @docstring TODO
+"""
+function resolve_lifted_var_type(var_types::Vector{Symbol}, operator::Symbol)
+
+    if operator == :+
+        detector = [i in [:Bin, :Int] ? true : false for i in var_types]
+        if length(detector) == 1 && detector[1] # Special case
+            if :Bin in var_types
+                return :Bin
+            else
+                return :Int
+            end
+        end
+        prod(detector) && return :Int
+        # o/w continous variables
+    elseif operator == :*
+        detector = [i == :Bin ? true : false for i in var_types]
+        prod(detector) && return :Bin
+        detector = [i in [:Bin, :Int] ? true : false for i in var_types]
+        prod(detector) && return :Int
+        # o/w continous variables
+    end
+
+    return :Cont
+end
+
+"""
+    TODO can be improved
+"""
+function build_discvar_graph(m::PODNonlinearModel)
+
+    # Collect the information of nonlinear terms in terms of arcs and nodes
+    nodes = ncvar_collect_nodes(m, getoutput=true)
+    arcs = ncvar_collect_arcs(m, nodes)
+
+    # Collect integer variables
+    for i in 1:m.num_var_orig
+        if !(i in nodes) && m.var_type[i] == :Int
+            push!(nodes, i)
+            push!(arcs, [i,i;])
+        end
+    end
+
+    nodes = collect(nodes)
+    arcs = collect(arcs)
+
+    return nodes, arcs
+end
+
+function min_vertex_cover(m::PODNonlinearModel)
+
+    nodes, arcs = build_discvar_graph(m)
+
+    # Set up minimum vertex cover problem
+    update_mip_time_limit(m, timelimit=60.0)  # Set a timer to avoid waste of time in proving optimality
+    minvertex = Model(solver=m.mip_solver)
+    @variable(minvertex, x[nodes], Bin)
+    @constraint(minvertex, [a in arcs], x[a[1]] + x[a[2]] >= 1)
+    @objective(minvertex, Min, sum(x))
+
+    status = solve(minvertex, suppress_warnings=true)
+    xVal = getvalue(x)
+
+    # Collecting required information
+    m.num_var_disc_mip = Int(sum(xVal))
+    m.disc_vars = [i for i in nodes if xVal[i] > m.tol && abs(m.u_var_tight[i]-m.l_var_tight[i]) >= m.tol]
+
+    return
+end
+
+function weighted_min_vertex_cover(m::PODNonlinearModel, distance::Dict)
+
+    # Collect the graph information
+    nodes, arcs = build_discvar_graph(m)
+
+    # A little bit redundency before
+    disvec = [distance[i] for i in keys(distance) if i in m.candidate_disc_vars]
+    disvec = abs.(disvec[disvec .> 0.0])
+    isempty(disvec) ? heavy = 1.0 : heavy = 1/minimum(disvec)
+    weights = Dict()
+    for i in m.candidate_disc_vars
+        isapprox(distance[i], 0.0; atol=1e-6) ? weights[i] = heavy : (weights[i]=(1/distance[i]))
+        (m.loglevel > 100) && println("VAR$(i) WEIGHT -> $(weights[i]) ||| DISTANCE -> $(distance[i])")
+    end
+
+    # Set up minimum vertex cover problem
+    update_mip_time_limit(m, timelimit=60.0)  # Set a timer to avoid waste of time in proving optimality
+    minvertex = Model(solver=m.mip_solver)
+    @variable(minvertex, x[nodes], Bin)
+    for arc in arcs
+        @constraint(minvertex, x[arc[1]] + x[arc[2]] >= 1)
+    end
+    @objective(minvertex, Min, sum(weights[i]*x[i] for i in nodes))
+
+    # Solve the minimum vertex cover
+    status = solve(minvertex, suppress_warnings=true)
+
+    xVal = getvalue(x)
+    m.num_var_disc_mip = Int(sum(xVal))
+    m.disc_vars = [i for i in nodes if xVal[i] > 0 && abs(m.u_var_tight[i]-m.l_var_tight[i]) >= m.tol]
+    m.loglevel >= 99 && println("UPDATED DISC-VAR COUNT = $(length(m.disc_vars)) : $(m.disc_vars)")
+
+    return
+end
+
+"""
+    Follow the definition of terms to calculate the value of lifted terms
+"""
+function resolve_lifted_var_value(m::PODNonlinearModel, sol_vec::Array)
+
+    @assert length(sol_vec) == m.num_var_orig
+    sol_vec = [sol_vec; fill(NaN, m.num_var_linear_mip+m.num_var_nonlinear_mip)]
+
+    for i in 1:length(m.term_seq)
+        k = m.term_seq[i]
+        if haskey(m.nonconvex_terms, k)
+            lvar_idx = m.nonconvex_terms[k][:y_idx]
+            sol_vec[lvar_idx] = m.nonconvex_terms[k][:evaluator](m.nonconvex_terms[k], sol_vec)
+        elseif haskey(m.linear_terms, k)
+            lvar_idx = m.linear_terms[k][:y_idx]
+            sol_vec[lvar_idx] = m.linear_terms[k][:evaluator](m.linear_terms[k], sol_vec)
+        else
+            error("[RARE] Found homeless term key $(k) during bound resolution.")
+        end
+    end
+
+    return sol_vec
+end
