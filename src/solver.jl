@@ -46,6 +46,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     convhull_ebd_encode::Any                                    # Encoding method used for convhull_ebd
     convhull_ebd_ibs::Bool                                      # Enable independent branching scheme
     convhull_ebd_link::Bool                                     # Linking constraints between x and α, type 1 usse hierarchical and type 2 with big-m
+    convhull_branch_priority::Vector                            # Branching priority
+    convhull_binary_links::Dict                                 # Links binary variables to its discretizing variables
 
     # Presolving Parameters
     presolve_track_time::Bool                                   # Account presolve time for total time usage
@@ -202,8 +204,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
                                 convhull_no_good_cuts,
                                 presolve_track_time,
                                 presolve_bt,
-                                presolve_maxiter,
                                 presolve_timeout,
+                                presolve_maxiter,
                                 presolve_bt_width_tol,
                                 presolve_bt_output_tol,
                                 presolve_bt_algo,
@@ -315,6 +317,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.num_constr_convex = 0
         m.constr_structure = []
         m.best_bound_sol = []
+        m.convhull_branch_priority = []
+        m.convhull_binary_links = Dict{Int, Vector}()
 
         m.bound_sol_history = Vector{Vector{Float64}}(m.disc_consecutive_forbid)
 

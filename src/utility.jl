@@ -230,23 +230,19 @@ function eval_objective(m::PODNonlinearModel; svec::Vector=[])
     return obj
 end
 
-function adjust_branch_priority(m::PODNonlinearModel)
+function adjust_branch_priority(m::PODNonlinearModel, priority=nothing)
 
-    isempty(m.branch_priority_mip) && return # By default
+    priority == nothing ? priority = m.convhull_branch_priority : priority = priority
+
+    isempty(priority) && return
     m.mip_solver_id != "Gurobi" && return
-    !m.model_mip.internalModelLoaded && return
+    !m.model_mip.internalModelLoaded && JuMP.build(m.model_mip)
 
     len = length(m.model_mip.colVal)
-    Gurobi.set_intattrarray!(m.model_mip.internalModel.inner, "BranchPriority", 1, len, [i in m.branch_priority_mip ? 1 : 0 for i in 1:len])
+    Gurobi.set_intattrarray!(m.model_mip.internalModel.inner, "BranchPriority", 1, len, [priority[i] for i in 1:len])
 
     return
 end
-
-function reset_branch_priority(m::PODNonlinearModel)
-    m.branch_priority_mip = []
-    return
-end
-
 
 """
     Special funtion for debugging bounding models

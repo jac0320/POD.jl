@@ -28,8 +28,9 @@ function global_solve(m::PODNonlinearModel)
 
     while !check_exit(m)
         m.logs[:n_iter] += 1
-        acpf_algorithm(m)
+        acpf_algo_measurements(m)
         m.feasibility_mode ? create_bounding_slackness_mip(m) : create_bounding_mip(m)  # Build the relaxation model
+        acpf_algo_position(m)
         bounding_solve(m)                                            # Solve the relaxation model
         update_opt_gap(m)                                            # Update optimality gap
         check_exit(m) && break                                       # Feasibility check

@@ -345,6 +345,7 @@ function amp_convhull_α(m::PODNonlinearModel, indices::Any, α::Dict, dim::Tupl
                 @constraint(m.model_mip, Variable(m.model_mip, i) >= sum(α[i][j]*discretization[i][j] for j in 1:lambda_cnt-1)) # Add x = f(α) for regulating the domains
                 @constraint(m.model_mip, Variable(m.model_mip, i) <= sum(α[i][j-1]*discretization[i][j] for j in 2:lambda_cnt))
             end
+            m.convhull_binary_links[i] = [v.col for v in α[i]]  # Record binary variable indices for other usages
         end
     end
 
