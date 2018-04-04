@@ -194,19 +194,20 @@ function amp_post_lifted_objective(m::PODNonlinearModel)
     return
 end
 
-function add_partition(m::PODNonlinearModel; kwargs...)
+function add_partition(m::PODNonlinearModel; use_disc=nothing, use_solution=nothing, use_ratio=nothing, method=nothing)
 
-    options = Dict(kwargs)
-    haskey(options, :use_disc) ? discretization = options[:use_disc] : discretization = m.discretization
-    haskey(options, :use_solution) ? point_vec = options[:use_solution] : point_vec = m.best_bound_sol
+    use_disc == nothing ? discretization = m.discretization : discretization = use_disc
+    use_solution == nothing ? point_vec = m.best_bound_sol : point_vec = use_solution
+    method == nothing ? method = m.disc_add_partition_method : method = method
+    use_ratio == nothing ? ratio = m.disc_ratio : ratio = use_ratio
 
-    if isa(m.disc_add_partition_method, Function)
-        m.discretization = eval(m.disc_add_partition_method)(m, use_disc=discretization, use_solution=point_vec)
-    elseif m.disc_add_partition_method == "adaptive"
-        m.discretization = add_adaptive_partition(m, use_disc=discretization, use_solution=point_vec)
-    elseif m.disc_add_partition_method == "separative"
+    if isa(method, Function)
+        m.discretization = eval(method)(m, use_disc=discretization, use_solution=point_vec)
+    elseif method == "adaptive"
+        m.discretization = add_adaptive_partition(m, use_disc=discretization, use_solution=point_vec, use_ratio=use_ratio)
+    elseif method == "separative"
         m.discretization = add_separative_partition(m, use_disc=discretization, user_solution=point_vec)
-    elseif m.disc_add_partition_method == "uniform"
+    elseif method == "uniform"
         m.discretization = add_uniform_partition(m, use_disc=discretization)
     else
         error("Unknown input on how to add partitions.")
@@ -243,8 +244,9 @@ function add_separative_partition(m::PODNonlinearModel;kwargs...)
             i in processed && continue
             point = correct_point(m, discretization[i], point, i)
             for j in 1:λCnt
-                if point >= discretization[i][j] && point <= discretization[i][j+1]  # Locating the right location
-                    insert_separative_partition(m, i, j, point, discretization[i])
+                partvec = discretization[i]
+                if point >= partvec[j] && point <= partvec[j+1]  # Locating the right location
+                    insert_separative_partition(m, i, j, point, partvec)
                     push!(processed, i)
                     break
                 end
@@ -297,7 +299,7 @@ function insert_separative_partition(m::PODNonlinearModel, var::Int, partidx::In
         (m.loglevel > 99) && println("[DEBUG] VAR$(var): SOL=$(round(point,4)) PARTITIONS=$(length(partvec)-1) |$(round(lb_local,4)) <- | $(m.disc_divert_chunks) SEGMENTS | -> $(round(ub_local,4))|")
         return
     else
-        (m.loglevel > 99) && println("[DEBUG] VAR$(var): SOL=$(round(point,4)), PARTITIONS=$(length(partvec)-1) |$(round(lb_local,4)) <- | * | -> $(round(ub_local,4))|")
+        (m.loglevel > 99) && println("[DEBUG] VAR$(var): SOL=$(round(point,4)), PARTITIONS=$(length(partvec)-1) |$(round(lb_local,4)) <- | $(round(point,4)) | -> $(round(ub_local,4))|")
         insert!(partvec, partidx+1, point)
         return
     end
@@ -332,14 +334,12 @@ TODO: also need to document the speical diverted cases when new partition touche
 
 This function belongs to the hackable group, which means it can be replaced by the user to change the behvaior of the solver.
 """
-function add_adaptive_partition(m::PODNonlinearModel;kwargs...)
+function add_adaptive_partition(m::PODNonlinearModel;use_ratio=nothing, branching=nothing, use_disc=nothing, use_solution=nothing)
 
-    options = Dict(kwargs)
-
-    haskey(options, :use_disc) ? discretization = options[:use_disc] : discretization = m.discretization
-    haskey(options, :use_solution) ? point_vec = copy(options[:use_solution]) : point_vec = copy(m.best_bound_sol)
-    haskey(options, :use_ratio) ? ratio = options[:use_ratio] : ratio = m.disc_ratio
-    haskey(options, :branching) ? branching = options[:branching] : branching = false
+    use_disc == nothing ? discretization = m.discretization : discretization = use_disc
+    use_solution == nothing ? point_vec = copy(use_solution) : point_vec = copy(use_solution)
+    use_ratio == nothing ? ratio = m.disc_ratio : ratio = use_ratio
+    branching == nothing ? branching = false : branching = branching
 
     if length(point_vec) < m.num_var_orig + m.num_var_linear_mip + m.num_var_nonlinear_mip
         point_vec = resolve_lifted_var_value(m, point_vec)  # Update the solution vector for lifted variable

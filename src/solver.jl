@@ -48,6 +48,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     convhull_ebd_link::Bool                                     # Linking constraints between x and α, type 1 usse hierarchical and type 2 with big-m
     convhull_branch_priority::Vector                            # Branching priority
     convhull_binary_links::Dict                                 # Links binary variables to its discretizing variables
+    convhull_lambda_links::Dict
 
     # Presolving Parameters
     presolve_track_time::Bool                                   # Account presolve time for total time usage
@@ -146,6 +147,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     # Discretization Related
     candidate_disc_vars::Vector{Int}                            # A vector of all original variable indices that is involved in the nonlinear terms
     discretization::Dict{Any,Any}                               # Discretization points keyed by the variables
+    disc_status::Dict{Any,Any}                                  # Monitor the discretization
     disc_vars::Vector{Int}                                      # Variables on which discretization is performed
     int_vars::Vector{Int}                                       # Index vector of integer variables
     bin_vars::Vector{Int}                                       # Index vector of binary variable

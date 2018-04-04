@@ -26,19 +26,21 @@ function global_solve(m::PODNonlinearModel)
     m.loglevel > 0 && logging_head(m)
     m.presolve_track_time || reset_timer(m)
 
+    acpf_pre_partition_construction(m)
     while !check_exit(m)
         m.logs[:n_iter] += 1
-        acpf_algo_measurements(m)
         m.feasibility_mode ? create_bounding_slackness_mip(m) : create_bounding_mip(m)  # Build the relaxation model
-        acpf_algo_position(m)
+        acpf_position_bounding_model(m)
         bounding_solve(m)                                            # Solve the relaxation model
         update_opt_gap(m)                                            # Update optimality gap
+        acpf_algo_measurements(m)
         check_exit(m) && break                                       # Feasibility check
         m.loglevel > 0 && logging_row_entry(m)                       # Logging
         local_solve(m)                                               # Solve local model for feasible solution
         update_opt_gap(m)                                            # Update optimality gap
         check_exit(m) && break                                       # Detect optimality termination
         algorithm_automation(m)                                      # Automated adjustments
+        acpf_pre_partition_construction(m)
         add_partition(m)                                             # Add extra discretizations
         m.arc_consistency && conflict_analysis(m)                    # Arc Consistency to Generate Residual
     end
@@ -77,6 +79,7 @@ function presolve(m::PODNonlinearModel)
         bound_tightening(m, use_bound = false)                      # do bound tightening without objective value
         (m.disc_ratio_branch) && (m.disc_ratio = update_disc_ratio(m))
         m.presolve_bt && init_disc(m)
+        # add_partition(m, use_solution=m.best_bound_sol)  # Setting up the initial discretization
         m.loglevel > 0 && println("Presolve ended.")
     elseif m.status[:local_solve] == :Not_Enough_Degrees_Of_Freedom
         warn("presolve ends with local solver yielding $(m.status[:local_solve]). \n Consider more replace equality constraints with >= and <= to resolve this.")
@@ -284,7 +287,6 @@ function bounding_solve(m::PODNonlinearModel)
     elseif status in status_infeasible
         push!(m.logs[:bound], "-")
         m.status[:bounding_solve] = :Infeasible
-        PODDEBUG && !m.feasibility_mode && print_iis_gurobi(m.model_mip) # Diagnostic code
         warn("[INFEASIBLE] Infeasibility detected via convex relaxation Infeasibility")
     elseif status == :Unbounded
         m.status[:bounding_solve] = :Unbounded

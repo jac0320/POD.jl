@@ -31,6 +31,8 @@ function amp_post_convhull(m::PODNonlinearModel; use_disc=nothing, warmstart=tru
         end
     end
 
+    m.convhull_lambda_links = λ
+
     # Experimental Code for Integer Problems
     if m.int_enable
         for i in 1:m.num_var_orig

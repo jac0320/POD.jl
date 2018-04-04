@@ -23,21 +23,81 @@ function acpf_algo_measurements(m::PODNonlinearModel; sol=nothing)
     sol == nothing ? sol = m.best_bound_sol : sol = sol
 
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
-    # measure_relaxed_deviation(m, sol=sol)           # Experimental code
+    measure_relaxed_deviation(m, sol=sol)           # Experimental code
     # measure_binding_constraints(m, sol=sol)         # Experimental code
     # acpf_get_v_val(m, sol)
     # acpf_get_g_val(m, sol)
     # acpf_get_flow_val(m, sol)
-    acpf_focus_on_congested_line(m, sol)
-
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
 
     return
 end
 
-function acpf_algo_position(m::PODNonlinearModel)
+function acpf_pre_partition_construction(m::PODNonlinearModel; sol=nothing)
+    println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
+    sol == nothing ? sol = m.best_bound_sol : sol = sol
+    acpf_focus_on_congested_line(m, sol)
+    println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
+    return
+end
 
-    adjust_branch_priority(m, acpf_build_priority(m))
+function acpf_position_bounding_model(m::PODNonlinearModel)
+
+    acpf_examine_partition_status(m)
+    # adjust_branch_priority(m, acpf_build_priority(m))
+
+    # Try MIP feasible solution
+    return
+end
+
+function acpf_examine_partition_status(m::PODNonlinearModel)
+
+    acpf_initialize_partition_status(m)
+    for k in keys(m.nonconvex_terms)
+        va, vb = m.nonconvex_terms[k][:var_idxs]
+        va_pcnt, vb_pcnt = length(m.discretization[va])-1, length(m.discretization[vb])-1
+        y_idx = m.nonconvex_terms[k][:y_idx]
+        y_part = (m.l_var_tight[y_idx], m.u_var_tight[y_idx])
+        for i in 1:va_pcnt
+            if m.disc_status[va][i]
+                va_part = [m.discretization[va][i], m.discretization[va][i+1]]
+                vb_part = [m.discretization[vb][1], m.discretization[vb][end]]
+                pd_part = [minimum(va_part*vb_part'), maximum(va_part*vb_part')]
+                if pd_part[2] < y_part[1] || pd_part[1] > y_part[2]
+                    println("VAR$(va) PART $(i) (X)")
+                    m.disc_status[va][i] = false
+                    m.model_mip.colUpper[m.convhull_binary_links[va][i]] = 0.0
+                end
+            end
+        end
+        for i in 1:vb_pcnt
+            if m.disc_status[vb][i]
+                va_part = [m.discretization[va][1], m.discretization[va][end]]
+                vb_part = [m.discretization[vb][i], m.discretization[vb][i+1]]
+                pd_part = [minimum(va_part*vb_part'), maximum(va_part*vb_part')]
+                if pd_part[2] < y_part[1] || pd_part[1] > y_part[2]
+                    println("VAR$(vb) PART $(i) (X)")
+                    m.disc_status[vb][i] = false
+                    m.model_mip.colUpper[m.convhull_binary_links[vb][i]] = 0.0
+                end
+            end
+        end
+    end
+
+    return
+end
+
+function acpf_initialize_partition_status(m::PODNonlinearModel)
+
+    m.disc_status = Dict(i=>[true for j in 1:length(m.discretization[i])-1] for i in m.candidate_disc_vars)
+
+    return
+end
+
+
+function acpf_seek_feasible_relaxation(m::PODNonlinearModel)
+
+    # Set up an bounding model based on current
 
     return
 end
@@ -114,7 +174,7 @@ function acpf_focus_on_congested_line(m::PODNonlinearModel, sol::Vector)
     end
     sort!(congestions, by=x->x[2])
     println("--- TOTAL congested lines (1e-3) = $(congested_cnt)")
-    # m.disc_vars = acpf_reselect_disc_vars(m, congestions)
+    m.disc_vars = acpf_reselect_disc_vars(m, congestions)
     return
 end
 
@@ -122,8 +182,10 @@ function acpf_reselect_disc_vars(m::PODNonlinearModel, congestions::Any)
 
     disc_vars = Set()
     println("--- Most congested lines $(congestions[1][1]): DIST=$(congestions[1][2])")
-    for v in acpf_get_v_idxs(m, congestions[1][1])
-        push!(disc_vars, v)
+    for i in 1:2
+        for v in acpf_get_v_idxs(m, congestions[i][1])
+            push!(disc_vars, v)
+        end
     end
 
     for b in congestions

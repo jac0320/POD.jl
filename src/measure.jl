@@ -5,24 +5,12 @@ function measure_relaxed_deviation(m::PODNonlinearModel;sol=nothing)
     isempty(sol) && return
 
     dev = []
-    vars = Set()
     for k in keys(m.nonconvex_terms)
         y_idx = m.nonconvex_terms[k][:y_idx]
         y_hat = sol[y_idx]
         y_val = m.nonconvex_terms[k][:evaluator](m.nonconvex_terms[k], sol)
         y_ext = measure_extreme_points(m, k, m.discretization, sol)
-        on_ext = false
-        for j in y_ext
-            if isapprox(y_hat, j;atol=m.tol)
-                on_ext = true
-            end
-        end
-        push!(dev, (y_idx, abs(y_hat-y_val), y_hat, y_val, m.nonconvex_terms[k][:var_idxs], on_ext))
-        if abs(y_hat-y_val) > 1e-4
-            for i in m.nonconvex_terms[k][:var_idxs]
-                push!(vars, i)
-            end
-        end
+        push!(dev, (y_idx, abs(y_hat-y_val), y_hat, y_val, m.nonconvex_terms[k][:var_idxs], y_ext, [sol[j] for j in m.nonconvex_terms[k][:var_idxs]]))
     end
 
     sort!(dev, by=x->x[1])
@@ -38,12 +26,10 @@ function measure_relaxed_deviation(m::PODNonlinearModel;sol=nothing)
         m.loglevel > 99 && println("X-VAR$(i): X-val=$(sol[i]) || $(local_interval) || BIND=$(local_binding)")
     end
     for i in dev
-        m.loglevel > 99 && println("Y-VAR$(i[1]): DIFF=$(i[2]) || Y-hat=$(i[3]), Y-val=$(i[4]) || BINDING=$(i[6]) || COMP $(i[5])")
+        m.loglevel > 99 && println("Y-VAR$(i[1]): DIFF=$(i[2]) || Y-hat=$(i[3]), Y-val=$(i[4]) || EXT=$(i[6]) || COMP $(i[5]) || X $(i[7])")
     end
     println("====================================================================")
 
-    # m.disc_vars = sort([i for i in vars])
-    # println("Reselected DISC VARS $(length(m.disc_vars))")
     return
 end
 
@@ -94,13 +80,12 @@ function measure_binding_constraints(m::PODNonlinearModel;sol=nothing)
         violation = nothing
         if m.constr_type_orig[i] == :(==)
             original = m.l_constr_orig[i]
-
         elseif m.constr_type_orig[i] == :(>=)
             original = m.l_constr_orig[i]
         elseif m.constr_type_orig[i] == :(<=)
             original = m.u_constr_orig[i]
         end
-        push!(orig_dev, (i, abs(evaluated-original), isapprox(evaluated, original; atol=1e-6)))
+        push!(orig_dev, (i, abs(evaluated-original), isapprox(evaluated, original; atol=1e-4)))
     end
 
     nlvar_in_constraint = find_nlvar_in_constr(m)
