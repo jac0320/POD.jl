@@ -22,13 +22,13 @@ function acpf_algo_measurements(m::PODNonlinearModel; sol=nothing)
 
     sol == nothing ? sol = m.best_bound_sol : sol = sol
 
-    println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
-    measure_relaxed_deviation(m, sol=sol)           # Experimental code
-    # measure_binding_constraints(m, sol=sol)         # Experimental code
-    # acpf_get_v_val(m, sol)
-    # acpf_get_g_val(m, sol)
-    # acpf_get_flow_val(m, sol)
-    println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
+    # println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
+    # measure_relaxed_deviation(m, sol=sol)           # Experimental code
+    # # measure_binding_constraints(m, sol=sol)         # Experimental code
+    # # acpf_get_v_val(m, sol)
+    # # acpf_get_g_val(m, sol)
+    # # acpf_get_flow_val(m, sol)
+    # println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
 
     return
 end
@@ -36,6 +36,7 @@ end
 function acpf_pre_partition_construction(m::PODNonlinearModel; sol=nothing)
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
     sol == nothing ? sol = m.best_bound_sol : sol = sol
+    measure_relaxed_deviation(m, sol=sol)           # Experimental cod
     acpf_focus_on_congested_line(m, sol)
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
     return
@@ -170,20 +171,27 @@ function acpf_focus_on_congested_line(m::PODNonlinearModel, sol::Vector)
         if abs(sol[p]^2+sol[q]^2-rate_a^2) < 1e-3
             congested_cnt += 1
         end
-        println("FLOW $(i[1]) : $(i[2]) -> $(i[3]) P=$(sol[p]) | Q=$(sol[q]) | RA-DIST $(abs(sol[p]^2+sol[q]^2-rate_a^2))")
+        bind_diff = abs(sol[p]^2+sol[q]^2-rate_a^2)
+        y_diff = 0.0
+        for j in acpf_search_v_terms(m, acpf_convhull_info_index(m), acpf_get_v_idxs(m, i), i)
+            y_diff += m.convhull_sol_info[j][2]
+        end
+        println("FLOW $(i[1]) : $(i[2]) -> $(i[3]) | RA-DIST $(bind_diff) | TOTAL-Y-DIFF $(y_diff) ")
     end
     sort!(congestions, by=x->x[2])
     println("--- TOTAL congested lines (1e-3) = $(congested_cnt)")
-    m.disc_vars = acpf_reselect_disc_vars(m, congestions)
+    # m.disc_vars = acpf_reselect_disc_vars(m, congestions)
     return
 end
 
 function acpf_reselect_disc_vars(m::PODNonlinearModel, congestions::Any)
 
     disc_vars = Set()
+
     println("--- Most congested lines $(congestions[1][1]): DIST=$(congestions[1][2])")
     for i in 1:2
         for v in acpf_get_v_idxs(m, congestions[i][1])
+            println("--- LINE $(congestions[i][1])")
             push!(disc_vars, v)
         end
     end
@@ -202,6 +210,22 @@ function acpf_reselect_disc_vars(m::PODNonlinearModel, congestions::Any)
     return [v for v in disc_vars]
 end
 
+function acpf_search_v_terms(m::PODNonlinearModel, info_dict::Dict, v_vars::Vector, branch::Tuple)
+
+    vr_from_idx = m.user_parameters.var[:nw][0][:vr][branch[2]].col
+    vi_from_idx = m.user_parameters.var[:nw][0][:vi][branch[2]].col
+    vr_to_idx = m.user_parameters.var[:nw][0][:vr][branch[3]].col
+    vi_to_idx = m.user_parameters.var[:nw][0][:vi][branch[3]].col
+
+    entry_idx = [info_dict[Set(vr_from_idx)], info_dict[Set(vi_from_idx)]]
+    push!(entry_idx, info_dict[Set(v for v in [vr_from_idx, vr_to_idx])])
+    push!(entry_idx, info_dict[Set(v for v in [vi_from_idx, vi_to_idx])])
+    push!(entry_idx, info_dict[Set(v for v in [vr_to_idx, vi_from_idx])])
+    push!(entry_idx, info_dict[Set(v for v in [vr_from_idx, vi_to_idx])])
+
+    return entry_idx
+end
+
 function acpf_get_v_idxs(m::PODNonlinearModel, branch::Tuple)
 
     return [m.user_parameters.var[:nw][0][:vr][branch[2]].col,
@@ -214,4 +238,8 @@ end
 function acpf_set_branching_priority(m::PODNonlinearModel, congestions::Any)
 
     return
+end
+
+function acpf_convhull_info_index(m::PODNonlinearModel)
+    return index_info = Dict(i[5]=>cnt for (cnt, i) in enumerate(m.convhull_sol_info))
 end

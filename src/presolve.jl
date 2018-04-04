@@ -118,7 +118,6 @@ function minmax_bound_tightening(m::PODNonlinearModel; use_bound = true, timelim
                     elseif status in status_reroute
                         temp_bounds[var_idx][tell_side[sense]] = eval(tell_round[sense])(getobjbound(m.model_mip)/m.presolve_bt_output_tol)*m.presolve_bt_output_tol
                     else
-                        print("!")
                         temp_bounds[var_idx][tell_side[sense]] = temp_bounds[var_idx][tell_side[sense]]
                     end
                 end
@@ -129,14 +128,12 @@ function minmax_bound_tightening(m::PODNonlinearModel; use_bound = true, timelim
         # Updates the discretization structure
         for var_idx in keys(temp_bounds)
             if abs(temp_bounds[var_idx][1] - discretization[var_idx][1])/(m.tol+abs(discretization[var_idx][1])) >= m.presolve_bt_width_tol
-                (m.loglevel > 199) && print("+")
-                m.loglevel > 99 && println("[DEBUG] VAR $(var_idx) LB contracted $(discretization[var_idx][1])=>$(temp_bounds[var_idx][1])")
+                m.loglevel > 199 && println("[DEBUG] VAR $(var_idx) LB contracted $(discretization[var_idx][1])=>$(temp_bounds[var_idx][1])")
                 keeptightening = true # Continue to perform the next iteration
                 discretization[var_idx][1] = temp_bounds[var_idx][1]
             end
             if abs(discretization[var_idx][end] - temp_bounds[var_idx][end])/(m.tol+abs(temp_bounds[var_idx][end])) >= m.presolve_bt_width_tol
-                (m.loglevel > 199) && print("+")
-                m.loglevel > 99 && println("[DEBUG] VAR $(var_idx) UB contracted $(discretization[var_idx][end])=>$(temp_bounds[var_idx][end])")
+                m.loglevel > 199 && println("[DEBUG] VAR $(var_idx) UB contracted $(discretization[var_idx][end])=>$(temp_bounds[var_idx][end])")
                 keeptightening = true
                 discretization[var_idx][end] = temp_bounds[var_idx][end]
             end

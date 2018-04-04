@@ -49,6 +49,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     convhull_branch_priority::Vector                            # Branching priority
     convhull_binary_links::Dict                                 # Links binary variables to its discretizing variables
     convhull_lambda_links::Dict
+    convhull_sol_info::Vector                                   # Records solution information, updated every main iteration
 
     # Presolving Parameters
     presolve_track_time::Bool                                   # Account presolve time for total time usage
@@ -320,6 +321,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.constr_structure = []
         m.best_bound_sol = []
         m.convhull_branch_priority = []
+        m.convhull_sol_info = []
         m.convhull_binary_links = Dict{Int, Vector}()
 
         m.bound_sol_history = Vector{Vector{Float64}}(m.disc_consecutive_forbid)

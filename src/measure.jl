@@ -10,10 +10,13 @@ function measure_relaxed_deviation(m::PODNonlinearModel;sol=nothing)
         y_hat = sol[y_idx]
         y_val = m.nonconvex_terms[k][:evaluator](m.nonconvex_terms[k], sol)
         y_ext = measure_extreme_points(m, k, m.discretization, sol)
-        push!(dev, (y_idx, abs(y_hat-y_val), y_hat, y_val, m.nonconvex_terms[k][:var_idxs], y_ext, [sol[j] for j in m.nonconvex_terms[k][:var_idxs]]))
+        push!(dev, (y_idx, abs(y_hat-y_val), y_hat, y_val, Set(m.nonconvex_terms[k][:var_idxs]), y_ext, [sol[j] for j in Set(m.nonconvex_terms[k][:var_idxs])], k))
     end
 
-    sort!(dev, by=x->x[1])
+    sort!(dev, by=x->x[2])
+
+    m.convhull_sol_info = dev  # Attach to the data structure
+
     println("====================================================================")
     for i in 1:m.num_var_orig
         local_interval = find_local_partition(m.discretization[i], sol[i])
@@ -25,8 +28,9 @@ function measure_relaxed_deviation(m::PODNonlinearModel;sol=nothing)
         end
         m.loglevel > 99 && println("X-VAR$(i): X-val=$(sol[i]) || $(local_interval) || BIND=$(local_binding)")
     end
+    println("====================================================================")
     for i in dev
-        m.loglevel > 99 && println("Y-VAR$(i[1]): DIFF=$(i[2]) || Y-hat=$(i[3]), Y-val=$(i[4]) || EXT=$(i[6]) || COMP $(i[5]) || X $(i[7])")
+        m.loglevel > 99 && println("Y-VAR$(i[1]): DIFF=$(i[2]) || Y-hat=$(i[3]), Y-val=$(i[4]) || COMP $(i[5]) ")
     end
     println("====================================================================")
 
