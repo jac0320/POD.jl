@@ -167,7 +167,6 @@ function acpf_focus_on_congested_line(m::PODNonlinearModel, sol::Vector)
         p = m.extension[:p][i]
         q = m.extension[:q][i]
         rate_a = m.user_parameters.data["branch"][string(i[1])]["rate_a"]
-        push!(congestions, (i, abs(sol[p]^2+sol[q]^2-rate_a^2)))
         if abs(sol[p]^2+sol[q]^2-rate_a^2) < 1e-3
             congested_cnt += 1
         end
@@ -177,10 +176,11 @@ function acpf_focus_on_congested_line(m::PODNonlinearModel, sol::Vector)
             y_diff += m.convhull_sol_info[j][2]
         end
         println("FLOW $(i[1]) : $(i[2]) -> $(i[3]) | RA-DIST $(bind_diff) | TOTAL-Y-DIFF $(y_diff) ")
+        push!(congestions, (i, bind_diff, y_diff))
     end
-    sort!(congestions, by=x->x[2])
+    sort!(congestions, by=x->x[3], rev=true)
     println("--- TOTAL congested lines (1e-3) = $(congested_cnt)")
-    # m.disc_vars = acpf_reselect_disc_vars(m, congestions)
+    m.disc_vars = acpf_reselect_disc_vars(m, congestions)
     return
 end
 
@@ -188,16 +188,16 @@ function acpf_reselect_disc_vars(m::PODNonlinearModel, congestions::Any)
 
     disc_vars = Set()
 
-    println("--- Most congested lines $(congestions[1][1]): DIST=$(congestions[1][2])")
+    println("--- Focused lines $(congestions[1][1]): R-DIST=$(congestions[1][2]) Y-DIST=$(congestions[1][3])")
     for i in 1:2
         for v in acpf_get_v_idxs(m, congestions[i][1])
-            println("--- LINE $(congestions[i][1])")
+            println("--- LINE $(congestions[i][1][1]):$(congestions[i][1][2])->$(congestions[i][1][3]) | VAR $(congestions[i])")
             push!(disc_vars, v)
         end
     end
 
     for b in congestions
-        if b[2] <= 1e-3
+        if b[2] <= 1e-4
             vars = acpf_get_v_idxs(m, b[1])
             for v in vars
                 push!(disc_vars, v)
