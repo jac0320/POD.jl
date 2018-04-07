@@ -37,7 +37,7 @@ function acpf_pre_partition_construction(m::PODNonlinearModel; sol=nothing)
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
     sol == nothing ? sol = m.best_bound_sol : sol = sol
     measure_relaxed_deviation(m, sol=sol)           # Experimental cod
-    acpf_focus_on_congested_line(m, sol)
+    acpf_disc_vars_heuristics(m, sol)
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
     return
 end
@@ -96,9 +96,15 @@ function acpf_initialize_partition_status(m::PODNonlinearModel)
 end
 
 
-function acpf_seek_feasible_relaxation(m::PODNonlinearModel)
+function acpf_relaxation_heuristic(m::PODNonlinearModel)
 
-    # Set up an bounding model based on current
+    # Set up an bounding model based on current discretization (with 1 extra partition)
+    create_bounding_mip(m)
+
+    # Perform an heuristic to search for an feasible solution
+
+
+
 
     return
 end
@@ -157,7 +163,7 @@ function acpf_get_flow_val(m::PODNonlinearModel, sol::Vector)
     return
 end
 
-function acpf_focus_on_congested_line(m::PODNonlinearModel, sol::Vector)
+function acpf_disc_vars_heuristics(m::PODNonlinearModel, sol::Vector)
 
     branch_idxs = sort([i for i in keys(m.extension[:p])], by=x->x[1])
     congested_cnt = 0
@@ -180,11 +186,12 @@ function acpf_focus_on_congested_line(m::PODNonlinearModel, sol::Vector)
     end
     sort!(congestions, by=x->x[3], rev=true)
     println("--- TOTAL congested lines (1e-3) = $(congested_cnt)")
-    m.disc_vars = acpf_reselect_disc_vars(m, congestions)
+
+    m.disc_vars = acpf_reselect_disc_vars(m, congestions, congested_cnt >= 0.1 * length(branch_idxs))
     return
 end
 
-function acpf_reselect_disc_vars(m::PODNonlinearModel, congestions::Any)
+function acpf_reselect_disc_vars(m::PODNonlinearModel, congestions::Any, consider_congested_line=true)
 
     disc_vars = Set()
 
@@ -196,11 +203,13 @@ function acpf_reselect_disc_vars(m::PODNonlinearModel, congestions::Any)
         end
     end
 
-    for b in congestions
-        if b[2] <= 1e-4
-            vars = acpf_get_v_idxs(m, b[1])
-            for v in vars
-                push!(disc_vars, v)
+    if tight_congested_line
+        for b in congestions
+            if b[2] <= 1e-4
+                vars = acpf_get_v_idxs(m, b[1])
+                for v in vars
+                    push!(disc_vars, v)
+                end
             end
         end
     end
