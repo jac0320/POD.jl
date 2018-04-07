@@ -29,6 +29,7 @@ function global_solve(m::PODNonlinearModel)
     acpf_pre_partition_construction(m)
     while !check_exit(m)
         m.logs[:n_iter] += 1
+        m.logs[:n_iter] > 1 && acpf_relaxation_heuristic(m)
         m.feasibility_mode ? create_bounding_slackness_mip(m) : create_bounding_mip(m)  # Build the relaxation model
         acpf_position_bounding_model(m)
         bounding_solve(m)                                            # Solve the relaxation model
@@ -258,6 +259,10 @@ function bounding_solve(m::PODNonlinearModel)
     # Updates time metric and position solver
     update_mip_time_limit(m)
     update_boundstop_options(m)
+
+    # Print some log information for experiment purposes
+    pre_bounding_solve_log(m)
+    acpf_warmstart_bounding_model(m)
 
     # ================= Solve Start ================ #
     start_bounding_solve = time()

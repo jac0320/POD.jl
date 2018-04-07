@@ -12,6 +12,7 @@ function init_acpf_package(m::PODNonlinearModel, acpf=Dict())
     acpf[:qg] = Dict(i[1]=>up.var[:nw][0][:vr][i[1]].col for i in keys(up.var[:nw][0][:vr]))
     acpf[:p] = Dict(i[1]=>up.var[:nw][0][:p][i[1]].col for i in keys(up.var[:nw][0][:p]))
     acpf[:q] = Dict(i[1]=>up.var[:nw][0][:q][i[1]].col for i in keys(up.var[:nw][0][:q]))
+    acpf[:warmstarter] = []
 
     @assert 2*N+2*G+4*E == m.num_var_orig
 
@@ -47,7 +48,6 @@ function acpf_position_bounding_model(m::PODNonlinearModel)
     acpf_examine_partition_status(m)
     # adjust_branch_priority(m, acpf_build_priority(m))
 
-    # Try MIP feasible solution
     return
 end
 
@@ -98,13 +98,41 @@ end
 
 function acpf_relaxation_heuristic(m::PODNonlinearModel)
 
+    m.extension[:warmstarter] = []
+    mip_solver_verbosity(m, 0)
+    println("~~~~~~~~~~~~~~~~ NEW CODE ~~~~~~~~~~~~~~~~~")
     # Set up an bounding model based on current discretization (with 1 extra partition)
     create_bounding_mip(m)
 
-    # Perform an heuristic to search for an feasible solution
+    neg_vr_part = Dict()
+    for k in keys(m.extension[:vr])
+        i = m.extension[:vr][k]
+        neg_vr_part[i] = find_local_partition_idx(m.discretization[i], -m.best_bound_sol[i])
+    end
 
+    for k in keys(m.extension[:vr])
+        i = m.extension[:vr][k]
+        setlowerbound(Variable(m.model_mip, m.convhull_binary_links[i][neg_vr_part[i]]), 1.0)
+    end
 
+    heuristic_status = solve(m.model_mip)
+    if heuristic_status in [:Optimal, :UserObjLimit, :UserLimit, :Suboptimal]
+        m.loglevel > 99 && println("Found feasible bounding solution OBJ=$(m.model_mip.objVal)")
+        m.extension[:warmstarter] = [round.(getvalue(Variable(m.model_mip, i)), 6) for i in 1:(m.num_var_orig+m.num_var_linear_mip+m.num_var_nonlinear_mip)]
+    end
+    println("~~~~~~~~~~~~~~~~ NEW CODE ~~~~~~~~~~~~~~~~~")
 
+    mip_solver_verbosity(m, 1)
+
+    return
+end
+
+function acpf_warmstart_bounding_model(m::PODNonlinearModel)
+
+    
+    if !isempty(m.extension[:warmstarter])
+        m.model_mip.colVal = copy(m.extension[:warmstarter])
+    end
 
     return
 end
@@ -203,7 +231,7 @@ function acpf_reselect_disc_vars(m::PODNonlinearModel, congestions::Any, conside
         end
     end
 
-    if tight_congested_line
+    if consider_congested_line
         for b in congestions
             if b[2] <= 1e-4
                 vars = acpf_get_v_idxs(m, b[1])

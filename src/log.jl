@@ -245,3 +245,22 @@ function summary_status(m::PODNonlinearModel)
 
     return
 end
+
+function pre_bounding_solve_log(m::PODNonlinearModel)
+
+    part_cnt = 0
+    part_max = 0
+    part_choice = 1
+    for i in m.candidate_disc_vars
+        if length(m.discretization[i]) > 2
+            part_cnt += length(m.discretization[i]) - 1
+            part_max = max(part_max, length(m.discretization[i]) - 1)
+            part_choice = part_choice * (length(m.discretization[i]) - 1)
+        end
+    end
+    m.loglevel > 99 && println("[DEBUG] Bouding model PARTITIONS = $(part_cnt)")
+    m.loglevel > 99 && println("[DEBUG] Maximum partition on single variable = $(part_max)")
+    m.loglevel > 99 && println("[DEBUG] Total LP required = $(part_choice)")
+
+    return
+end

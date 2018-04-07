@@ -85,6 +85,19 @@ function find_local_partition(part::Vector, sol::Float64)
     return
 end
 
+function find_local_partition_idx(part::Vector, sol::Float64)
+
+    P = length(part) - 1
+    for i in 1:P
+        if sol >= part[i] - 1e-6 && sol <= part[i+1] + 1e-6
+            return i
+        end
+    end
+
+    error("$(sol) $(part) Solution didn't showed in any partition")
+
+    return
+end
 
 """
     @docstring
