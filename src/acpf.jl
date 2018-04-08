@@ -12,7 +12,8 @@ function init_acpf_package(m::PODNonlinearModel, acpf=Dict())
     acpf[:qg] = Dict(i[1]=>up.var[:nw][0][:vr][i[1]].col for i in keys(up.var[:nw][0][:vr]))
     acpf[:p] = Dict(i[1]=>up.var[:nw][0][:p][i[1]].col for i in keys(up.var[:nw][0][:p]))
     acpf[:q] = Dict(i[1]=>up.var[:nw][0][:q][i[1]].col for i in keys(up.var[:nw][0][:q]))
-    acpf[:warmstarter] = []
+    acpf[:warmstarter_sol] = []
+    acpf[:warmstarter_obj] = Inf
 
     @assert 2*N+2*G+4*E == m.num_var_orig
 
@@ -46,7 +47,6 @@ end
 function acpf_position_bounding_model(m::PODNonlinearModel)
 
     acpf_examine_partition_status(m)
-    # adjust_branch_priority(m, acpf_build_priority(m))
 
     return
 end
@@ -98,12 +98,39 @@ end
 
 function acpf_relaxation_heuristic(m::PODNonlinearModel)
 
-    m.extension[:warmstarter] = []
-    mip_solver_verbosity(m, 0)
+    convertor = Dict(:Max=>:<, :Min=>:>)
+
+    m.extension[:warmstarter_obj] = Inf
+    m.extension[:warmstarter_sol] = []
+
+    m.logs[:n_iter] <= 1 && return true
+
     println("~~~~~~~~~~~~~~~~ NEW CODE ~~~~~~~~~~~~~~~~~")
     # Set up an bounding model based on current discretization (with 1 extra partition)
     create_bounding_mip(m)
+    acpf_heuristic_negvr(m)
+    acpf_heuristic_directvr(m)
 
+    if !isempty(m.extension[:warmstarter_sol])
+        candidate_bound = m.extension[:warmstarter_obj]
+        candidate_bound_sol = [round.(m.extension[:warmstarter_sol][i], 6) for i in 1:(m.num_var_orig+m.num_var_linear_mip+m.num_var_nonlinear_mip)]
+        push!(m.logs[:bound], candidate_bound)
+        if eval(convertor[m.sense_orig])(candidate_bound, m.best_bound)
+            m.best_bound = candidate_bound
+            m.best_bound_sol = copy(candidate_bound_sol)
+            m.status[:bounding_solve] = :Heuristics
+            m.status[:bound] = :Detected
+        end
+        collect_lb_pool(m)    # Always collect details sub-optimal solution
+    end
+    println("~~~~~~~~~~~~~~~~ NEW CODE ~~~~~~~~~~~~~~~~~")
+
+    return isempty(m.extension[:warmstarter_sol])
+end
+
+function acpf_heuristic_negvr(m::PODNonlinearModel)
+
+    mip_solver_verbosity(m, 0)
     neg_vr_part = Dict()
     for k in keys(m.extension[:vr])
         i = m.extension[:vr][k]
@@ -115,24 +142,65 @@ function acpf_relaxation_heuristic(m::PODNonlinearModel)
         setlowerbound(Variable(m.model_mip, m.convhull_binary_links[i][neg_vr_part[i]]), 1.0)
     end
 
-    heuristic_status = solve(m.model_mip)
+    heuristic_status = solve(m.model_mip, suppress_warnings=true)
     if heuristic_status in [:Optimal, :UserObjLimit, :UserLimit, :Suboptimal]
-        m.loglevel > 99 && println("Found feasible bounding solution OBJ=$(m.model_mip.objVal)")
-        m.extension[:warmstarter] = [round.(getvalue(Variable(m.model_mip, i)), 6) for i in 1:(m.num_var_orig+m.num_var_linear_mip+m.num_var_nonlinear_mip)]
+        m.loglevel > 99 && println("[NEG-VR] Found feasible bounding solution OBJ=$(m.model_mip.objVal)")
+        if m.model_mip.objVal < m.extension[:warmstarter_obj]
+            m.extension[:warmstarter_sol] = copy(m.model_mip.colVal)
+            m.extension[:warmstarter_obj] = m.model_mip.objVal
+        end
+    else
+        m.loglevel > 99 && println("[NEG-VR] Heuristic did no help STATUS=$(heuristic_status)")
     end
-    println("~~~~~~~~~~~~~~~~ NEW CODE ~~~~~~~~~~~~~~~~~")
+
+    for k in keys(m.extension[:vr])
+        i = m.extension[:vr][k]
+        setlowerbound(Variable(m.model_mip, m.convhull_binary_links[i][neg_vr_part[i]]), 0.0)
+    end
+    mip_solver_verbosity(m, 1)
+    return
+end
+
+function acpf_heuristic_directvr(m::PODNonlinearModel)
+
+    mip_solver_verbosity(m, 0)
+    vr_part = Dict()
+    for k in keys(m.extension[:vr])
+        i = m.extension[:vr][k]
+        vr_part[i] = find_local_partition_idx(m.discretization[i], m.best_bound_sol[i])
+    end
+
+    for k in keys(m.extension[:vr])
+        i = m.extension[:vr][k]
+        setlowerbound(Variable(m.model_mip, m.convhull_binary_links[i][vr_part[i]]), 1.0)
+    end
+
+    heuristic_status = solve(m.model_mip, suppress_warnings=true)
+    if heuristic_status in [:Optimal, :UserObjLimit, :UserLimit, :Suboptimal]
+        m.loglevel > 99 && println("[DIRECT-VR] Found feasible bounding solution OBJ=$(m.model_mip.objVal)")
+        if m.model_mip.objVal < m.extension[:warmstarter_obj]
+            m.extension[:warmstarter_sol] = copy(m.model_mip.colVal)
+            m.extension[:warmstarter_obj] = m.model_mip.objVal
+        end
+    else
+        m.loglevel > 99 && println("[DIRECT-VR] Heuristic did no help STATUS=$(heuristic_status)")
+    end
+
+    for k in keys(m.extension[:vr])
+        i = m.extension[:vr][k]
+        setlowerbound(Variable(m.model_mip, m.convhull_binary_links[i][vr_part[i]]), 0.0)
+    end
 
     mip_solver_verbosity(m, 1)
-
     return
 end
 
 function acpf_warmstart_bounding_model(m::PODNonlinearModel)
 
-    
-    if !isempty(m.extension[:warmstarter])
-        m.model_mip.colVal = copy(m.extension[:warmstarter])
-    end
+    # if !isempty(m.extension[:warmstarter_sol])
+    #     @assert length(m.extension[:warmstarter_sol]) == length(m.model_mip.colVal)
+    #     m.model_mip.colVal = m.extension[:warmstarter_sol]
+    # end
 
     return
 end

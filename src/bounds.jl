@@ -241,8 +241,10 @@ This function can potential grow to be smarter.
 function bounds_propagation(m::PODNonlinearModel)
 
     exhausted = false
+    iter = 0
     while !exhausted
         exhausted = true
+        iter += 1
         for aff in m.bounding_constr_mip
             for i in 1:length(aff[:vars])
                 var_idx = aff[:vars][i].args[2]
@@ -334,6 +336,7 @@ function bounds_propagation(m::PODNonlinearModel)
             end
         end
         (exhausted == true && m.loglevel > 99) && println("Finished variable bound propagation...")
+        iter = 99 && break
     end
 
 
