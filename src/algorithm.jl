@@ -2,11 +2,17 @@
     High-level Function
 """
 function MathProgBase.optimize!(m::PODNonlinearModel)
-    any(isnan, m.best_sol) && (m.best_sol = zeros(length(m.best_sol)))
+    if m.presolve_infeasible
+        summary_status(m)
+        return
+    end
     presolve(m)
-    global_solve(m)
+    if !check_exit(m)
+        global_solve(m)
+    end
     m.loglevel > 0 && logging_row_entry(m, finsih_entry=true)
     summary_status(m)
+    return
 end
 
 """
@@ -29,10 +35,11 @@ function global_solve(m::PODNonlinearModel)
     acpf_pre_partition_construction(m)
     while !check_exit(m)
         m.logs[:n_iter] += 1
-        acpf_relaxation_heuristic(m)
+        # if acpf_relaxation_heuristic(m)
         create_bounding_mip(m)  # Build the relaxation model
         acpf_position_bounding_model(m)
         bounding_solve(m)                                            # Solve the relaxation model
+        # end
         update_opt_gap(m)                                            # Update optimality gap
         acpf_algo_measurements(m)
         check_exit(m) && break                                       # Feasibility check
@@ -69,23 +76,26 @@ function presolve(m::PODNonlinearModel)
     bounding_solve(m)
     update_opt_gap(m)
 
-    if m.status[:local_solve] in status_pass
-        m.loglevel > 0 && println("local solver returns feasible point")
-        bound_tightening(m, use_bound = true)    # performs bound-tightening with the local solve objective value
-        m.presolve_bt && init_disc(m)            # Re-initialize discretization dictionary on tight bounds
-        m.disc_ratio_branch && (m.disc_ratio = update_disc_ratio(m, true))
-        add_partition(m, use_solution=m.best_sol)  # Setting up the initial discretization
-    elseif m.status[:local_solve] in status_reroute
-        (m.loglevel > 0) && println("performing bound tightening without objective bounds...")
-        bound_tightening(m, use_bound = false)                      # do bound tightening without objective value
-        (m.disc_ratio_branch) && (m.disc_ratio = update_disc_ratio(m))
-        m.presolve_bt && init_disc(m)
-        # add_partition(m, use_solution=m.best_bound_sol)  # Setting up the initial discretization
-        m.loglevel > 0 && println("Presolve ended.")
-    elseif m.status[:local_solve] == :Not_Enough_Degrees_Of_Freedom
-        warn("presolve ends with local solver yielding $(m.status[:local_solve]). \n Consider more replace equality constraints with >= and <= to resolve this.")
-    else
-        warn("presolve ends with local solver yielding $(m.status[:local_solve]).")
+    if !check_exit(m)
+        # Initial Position of POD with BT
+        if m.status[:local_solve] in status_pass
+            m.loglevel > 0 && println("local solver returns feasible point")
+            bound_tightening(m, use_bound = true)    # performs bound-tightening with the local solve objective value
+            m.presolve_bt && init_disc(m)            # Re-initialize discretization dictionary on tight bounds
+            m.disc_ratio_branch && (m.disc_ratio = update_disc_ratio(m, true))
+            add_partition(m, use_solution=m.best_sol)  # Setting up the initial discretization
+        elseif m.status[:local_solve] in status_reroute
+            (m.loglevel > 0) && println("local solve infeasible. performing bound tightening without objective bounds...")
+            bound_tightening(m, use_bound = false)                      # do bound tightening without objective value
+            (m.disc_ratio_branch) && (m.disc_ratio = update_disc_ratio(m))
+            m.presolve_bt && init_disc(m)
+            # add_partition(m, use_solution=m.best_bound_sol)  # Setting up the initial discretization
+            m.loglevel > 0 && println("Presolve ended.")
+        elseif m.status[:local_solve] == :Not_Enough_Degrees_Of_Freedom
+            warn("presolve ends with local solver yielding $(m.status[:local_solve]). \n Consider more replace equality constraints with >= and <= to resolve this.")
+        else
+            warn("presolve ends with local solver yielding $(m.status[:local_solve]).")
+        end
     end
 
     cputime_presolve = time() - start_presolve
@@ -206,10 +216,11 @@ function local_solve(m::PODNonlinearModel; presolve = false)
     m.logs[:total_time] += cputime_local_solve
     m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
 
-    status_pass = [:Optimal, :Suboptimal, :UserLimit, :LocalOptimal]
-    status_heuristic = [:Heuristics]
+    status_pass = [:Optimal, :Suboptimal, :LocalOptimal]
+    status_heuristic = [:Heuristics, :UserLimit]
     status_reroute = [:Infeasible, :Infeasibles]
 
+    @show local_nlp_status
     if local_nlp_status in status_pass
         candidate_obj = interface_get_objval(local_solve_model)
         candidate_sol = round.(interface_get_solution(local_solve_model), 5)

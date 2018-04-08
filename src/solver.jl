@@ -68,7 +68,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     arc_consistency_cuts::Dict                                  # Place Holder for AC cuts
     arc_consistency_depth::Int                                  # Maximum recursive depth
     user_parameters::Any                                        # Additional parameters used for user-defined functional inputs
-    extension::Any                                              # Extended data structure for dedicated applications
+    extension::Any
+    presolve_infeasible::Bool                                   # Presolve Feasibility
 
     # Features for Integer Problems (NOTE: no support for intlin problems)
     int_enable::Bool                                            # Convert integer problem into binary problem by flatten the choice of variable domain
@@ -323,7 +324,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.convhull_branch_priority = []
         m.convhull_sol_info = []
         m.convhull_binary_links = Dict{Int, Vector}()
-
+        m.bound_sol_history = []
+        m.presolve_infeasible = false
         m.bound_sol_history = Vector{Vector{Float64}}(m.disc_consecutive_forbid)
 
         m.arc_consistency_cuts = Dict()
@@ -764,11 +766,11 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
     end
 
     # Main Algorithmic Initialization
-    process_expr(m)                  # Compact process of every expression
-    init_tight_bound(m)              # Initialize bounds for algorithmic processes
-    resolve_var_bounds(m)            # resolve lifted var bounds
-    pick_disc_vars(m)                # Picking variables to be discretized
-    init_disc(m)                     # Initialize discretization dictionarys
+    process_expr(m)                         # Compact process of every expression
+    init_tight_bound(m)                     # Initialize bounds for algorithmic processes
+    resolve_var_bounds(m)                   # resolve lifted var bounds
+    pick_disc_vars(m)                       # Picking variables to be discretized
+    init_disc(m)                            # Initialize discretization dictionarys
 
     # Turn-on bt presolver if not discrete variables
     if isempty(m.int_vars) && length(m.bin_vars) <= 50 && m.num_var_orig <= 10000 && length(m.candidate_disc_vars)<=300 && m.presolve_bt == nothing
@@ -789,26 +791,28 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
         m.convhull_warmstart = false
     end
 
+    # Customize Code
+    m.extension = init_acpf_package(m)
+
     # Initialize the solution pool
     m.bound_sol_pool = initialize_solution_pool(m, 0)  # Initialize the solution pool
 
     # Record the initial solution from the warmstarting value, if any
     m.best_sol = m.d_orig.m.colVal
 
-    # ***** ACPF Treatment *****
-    m.extension = init_acpf_package(m)
-    # **************************
+    # Check if any illegal term exist in the warm-solution
+    any(isnan, m.best_sol) && (m.best_sol = zeros(length(m.best_sol)))
 
     # Initialize log
     logging_summary(m)
 
     ## Citation
-    println("-----------------------------------------------------------------")
+    println("----------------------------------------------------------------------")
     println("If you find POD useful, please cite the following work. Thanks!!!")
     println("Nagarajan, H., Lu, M., Wang, S., Bent, R. and Sundar, K., 2017. ")
     println("An Adaptive, Multivariate Partitioning Algorithm for Global ")
     println("Optimization of Nonconvex Programs. arXiv preprint arXiv:1707.02514.")
-    println("-----------------------------------------------------------------")
+    println("----------------------------------------------------------------------")
 
     return
 end

@@ -443,6 +443,15 @@ function mip_solver_verbosity(m::PODNonlinearModel, verbosity::Int)
     return
 end
 
+function mip_solver_builtin_algorithm(m::PODNonlinearModel, algorithm::Int)
+
+    if m.mip_solver_id == "CPLEX"
+        insert_timeleft_symbol(m.mip_solver.options, verbosity, :CPXPARAM_Benders_Strategy, m.timeout)
+    end
+
+    return
+end
+
 """
 
     update_mip_time_limit(m::PODNonlinearModel)

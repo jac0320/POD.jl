@@ -38,7 +38,7 @@ end
 function acpf_pre_partition_construction(m::PODNonlinearModel; sol=nothing)
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
     sol == nothing ? sol = m.best_bound_sol : sol = sol
-    measure_relaxed_deviation(m, sol=sol)           # Experimental cod
+    measure_relaxed_deviation(m, sol=sol)           # Experimental code
     acpf_disc_vars_heuristics(m, sol)
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
     return
@@ -111,7 +111,7 @@ function acpf_relaxation_heuristic(m::PODNonlinearModel)
     acpf_heuristic_negvr(m)
     acpf_heuristic_directvr(m)
 
-    if !isempty(m.extension[:warmstarter_sol])
+    if !isempty(m.extension[:warmstarter_sol]) && isapprox(m.extension[:warmstarter_obj], m.best_bound;atol=m.tol)
         candidate_bound = m.extension[:warmstarter_obj]
         candidate_bound_sol = [round.(m.extension[:warmstarter_sol][i], 6) for i in 1:(m.num_var_orig+m.num_var_linear_mip+m.num_var_nonlinear_mip)]
         push!(m.logs[:bound], candidate_bound)
@@ -125,7 +125,7 @@ function acpf_relaxation_heuristic(m::PODNonlinearModel)
     end
     println("~~~~~~~~~~~~~~~~ NEW CODE ~~~~~~~~~~~~~~~~~")
 
-    return isempty(m.extension[:warmstarter_sol])
+    return isempty(m.extension[:warmstarter_sol]) && isapprox(m.extension[:warmstarter_obj], m.best_bound;atol=m.tol)
 end
 
 function acpf_heuristic_negvr(m::PODNonlinearModel)
