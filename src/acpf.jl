@@ -36,22 +36,27 @@ function acpf_algo_measurements(m::PODNonlinearModel; sol=nothing)
 end
 
 function acpf_pre_partition_construction(m::PODNonlinearModel; sol=nothing)
+
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
     sol == nothing ? sol = m.best_bound_sol : sol = sol
     measure_relaxed_deviation(m, sol=sol)           # Experimental code
     acpf_disc_vars_heuristics(m, sol)
     println("@@@@@@@@@@@@@@@@ ACPF @@@@@@@@@@@@@@@@@@")
+
     return
 end
 
 function acpf_position_bounding_model(m::PODNonlinearModel)
 
     acpf_examine_partition_status(m)
+    acpf_post_padcuts(m)
 
     return
 end
 
 function acpf_examine_partition_status(m::PODNonlinearModel)
+
+    m.convhull_ebd && return
 
     acpf_initialize_partition_status(m)
     for k in keys(m.nonconvex_terms)
@@ -88,6 +93,90 @@ function acpf_examine_partition_status(m::PODNonlinearModel)
     return
 end
 
+"""
+    Implementation of LNC in SDP paper
+"""
+function acpf_post_padcuts(m::PODNonlinearModel)
+
+    branch_idxs = sort([i for i in keys(m.extension[:p])], by=x->x[1])
+    binding_cnt = 0
+    for i in branch_idxs
+        br_idx = i[1]
+        f_bus = i[2]
+        t_bus = i[3]
+
+        # Fetch POD index
+        vr_f_idx = m.extension[:vr][f_bus]
+        vr_t_idx = m.extension[:vr][t_bus]
+        vi_f_idx = m.extension[:vi][f_bus]
+        vi_t_idx = m.extension[:vi][t_bus]
+
+        # Fetch lifted variable index
+        if haskey(m.nonconvex_terms, Expr[:(x[$(vr_f_idx)]), :(x[$(vr_t_idx)])])
+            vr_ij_idx = m.nonconvex_terms[Expr[:(x[$(vr_f_idx)]), :(x[$(vr_t_idx)])]][:y_idx]
+        elseif haskey(m.nonconvex_terms, Expr[:(x[$(vr_t_idx)]), :(x[$(vr_f_idx)])])
+            vr_ij_idx = m.nonconvex_terms[Expr[:(x[$(vr_t_idx)]), :(x[$(vr_f_idx)])]][:y_idx]
+        else
+            error("Missing nonconvex term")
+        end
+
+        if haskey(m.nonconvex_terms, Expr[:(x[$(vi_f_idx)]), :(x[$(vi_t_idx)])])
+            vi_ij_idx = m.nonconvex_terms[Expr[:(x[$(vi_f_idx)]), :(x[$(vi_t_idx)])]][:y_idx]
+        elseif haskey(m.nonconvex_terms, Expr[:(x[$(vi_t_idx)]), :(x[$(vi_f_idx)])])
+            vi_ij_idx = m.nonconvex_terms[Expr[:(x[$(vi_t_idx)]), :(x[$(vi_f_idx)])]][:y_idx]
+        else
+            error("Missing nonconvex term")
+        end
+
+        if haskey(m.nonconvex_terms, Expr[:(x[$(vr_f_idx)]), :(x[$(vr_f_idx)])])
+            vr_ii_idx = m.nonconvex_terms[Expr[:(x[$(vr_f_idx)]), :(x[$(vr_f_idx)])]][:y_idx]
+        else
+            error("Missing nonconvex term")
+        end
+
+        if haskey(m.nonconvex_terms, Expr[:(x[$(vr_t_idx)]), :(x[$(vr_t_idx)])])
+            vr_jj_idx = m.nonconvex_terms[Expr[:(x[$(vr_t_idx)]), :(x[$(vr_t_idx)])]][:y_idx]
+        else
+            error("Missing nonconvex term")
+        end
+
+        # Fetch bounding model variable
+        vr_ij = Variable(m.model_mip, vr_ij_idx)
+        vi_ij = Variable(m.model_mip, vi_ij_idx)
+        vr_ii = Variable(m.model_mip, vr_ii_idx)
+        vr_jj = Variable(m.model_mip, vr_jj_idx)
+
+        # Fetch bounding model bound (change this to fetch POD bounds)
+        vfub = sqrt(m.u_var_tight[vr_ii_idx])
+        vflb = sqrt(m.l_var_tight[vr_ii_idx])
+        vtub = sqrt(m.u_var_tight[vr_jj_idx])
+        vtlb = sqrt(m.l_var_tight[vr_jj_idx])
+
+        # Fetch parameters : angmin, angmax
+        angmin = m.user_parameters.ref[:nw][0][:branch][br_idx]["angmin"]
+        angmax = m.user_parameters.ref[:nw][0][:branch][br_idx]["angmax"]
+
+        # Perform some basic assertion
+        @assert angmin >= -pi/2 && angmin <= pi/2
+        @assert angmax >= -pi/2 && angmax <= pi/2
+        @assert angmin < angmax
+
+        # Calculate Some parameters
+        tdub = angmax
+        tdlb = angmin
+        phi = (tdub + tdlb)/2
+        d = (tdub - tdlb)/2
+        sf = vflb + vfub
+        st = vtlb + vtub
+
+        # Setup LNC
+        @constraint(m.model_mip, sf*st*(cos(phi)*vr_ij + sin(phi)*vi_ij) - vtub*cos(d)*st*vr_ii - vfub*cos(d)*sf*vr_jj >=  vfub*vtub*cos(d)*(vflb*vtlb - vfub*vtub))
+        @constraint(m.model_mip, sf*st*(cos(phi)*vr_ij + sin(phi)*vi_ij) - vtlb*cos(d)*st*vr_ii - vflb*cos(d)*sf*vr_jj >= -vflb*vtlb*cos(d)*(vflb*vtlb - vfub*vtub))
+    end
+
+    return
+end
+
 function acpf_initialize_partition_status(m::PODNonlinearModel)
 
     m.disc_status = Dict(i=>[true for j in 1:length(m.discretization[i])-1] for i in m.candidate_disc_vars)
@@ -107,30 +196,82 @@ function acpf_relaxation_heuristic(m::PODNonlinearModel)
 
     println("~~~~~~~~~~~~~~~~ NEW CODE ~~~~~~~~~~~~~~~~~")
     # Set up an bounding model based on current discretization (with 1 extra partition)
-    create_bounding_mip(m)
-    acpf_heuristic_negvr(m)
-    acpf_heuristic_directvr(m)
-
-    if !isempty(m.extension[:warmstarter_sol]) && isapprox(m.extension[:warmstarter_obj], m.best_bound;atol=m.tol)
-        candidate_bound = m.extension[:warmstarter_obj]
-        candidate_bound_sol = [round.(m.extension[:warmstarter_sol][i], 6) for i in 1:(m.num_var_orig+m.num_var_linear_mip+m.num_var_nonlinear_mip)]
-        push!(m.logs[:bound], candidate_bound)
-        if eval(convertor[m.sense_orig])(candidate_bound, m.best_bound)
-            m.best_bound = candidate_bound
-            m.best_bound_sol = copy(candidate_bound_sol)
-            m.status[:bounding_solve] = :Heuristics
-            m.status[:bound] = :Detected
-        end
-        collect_lb_pool(m)    # Always collect details sub-optimal solution
-    end
+    mip_solver_verbosity(m, 0)
+    create_bounding_mip(m, warmstart=false)
+    # acpf_heuristic_negvr(m)
+    # acpf_heuristic_directvr(m)
+    acpf_bt(m)
+    mip_solver_verbosity(m, 1)
     println("~~~~~~~~~~~~~~~~ NEW CODE ~~~~~~~~~~~~~~~~~")
 
     return isempty(m.extension[:warmstarter_sol]) && isapprox(m.extension[:warmstarter_obj], m.best_bound;atol=m.tol)
 end
 
+function acpf_bt(m::PODNonlinearModel)
+
+    exhausted = false
+    iter_cnt = 0
+    max_iter = 1
+
+    # Perform minmax bt on disc_vars
+    start_acpf_bt = time()
+    println("[ACPF] BT tasks count = $(length(m.disc_vars) * 2)")
+    while !exhausted && iter_cnt < max_iter
+        iter_cnt += 1
+        exhausted = true
+        for i in m.disc_vars
+            improvement = false
+            @objective(m.model_mip, Min, Variable(m.model_mip, i))
+            one_solve_start = time()
+            status = solve(m.model_mip, suppress_warnings=true)
+            if status == :Optimal
+                new_lb = m.model_mip.objVal
+                if new_lb >= m.l_var_tight[i] + 10e-5
+                    println("[ACPF] ! Improved LB VAR$(i) >= $(round(new_lb,6)) | TIME=$(round(time()-one_solve_start,2)) | $(m.discretization[i])")
+                    exhausted = false
+                    improvement = true
+                    m.l_var_tight[i] = new_lb
+                else
+                    println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_lb,6))")
+                end
+            else
+                warn("VAR$(i) STATUS=$(status)")
+            end
+            @objective(m.model_mip, Max, Variable(m.model_mip, i))
+            one_solve_start = time()
+            status = solve(m.model_mip, suppress_warnings=true)
+            if status == :Optimal
+                new_ub = m.model_mip.objVal
+                if new_ub <= m.u_var_tight[i] - 10e-5
+                    exhausted = false
+                    improvement = true
+                    m.u_var_tight[i] = new_ub
+                    println("[ACPF] ! Improved UB VAR$(i) <= $(round(new_ub,6)) | TIME=$(round(time()-one_solve_start,2)) | $(m.discretization[i])")
+                else
+                    println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_ub,6))")
+                end
+            else
+                warn("VAR$(i) STATUS=$(status)")
+            end
+            if improvement # Update the bounding model with the improved bounds
+                first_b = max(m.l_var_tight[i], new_lb)
+                last_b = min(m.u_var_tight[i], new_ub)
+                PCnt = length(m.discretization[i])
+                middle_part = [m.discretization[i][j] for j in 2:PCnt-1 if m.discretization[i][j] > first_b && m.discretization[i][j] < last_b]
+                m.discretization[i] = Float64[first_b, middle_part, last_b;]
+                println("[ACPF] Updated discretization $(m.discretization[i])")
+                create_bounding_mip(m, warmstart=false)
+            end
+        end
+    end
+    m.logs[:total_time] += time() - start_acpf_bt
+    m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
+
+    return
+end
+
 function acpf_heuristic_negvr(m::PODNonlinearModel)
 
-    mip_solver_verbosity(m, 0)
     neg_vr_part = Dict()
     for k in keys(m.extension[:vr])
         i = m.extension[:vr][k]
@@ -157,13 +298,12 @@ function acpf_heuristic_negvr(m::PODNonlinearModel)
         i = m.extension[:vr][k]
         setlowerbound(Variable(m.model_mip, m.convhull_binary_links[i][neg_vr_part[i]]), 0.0)
     end
-    mip_solver_verbosity(m, 1)
+
     return
 end
 
 function acpf_heuristic_directvr(m::PODNonlinearModel)
 
-    mip_solver_verbosity(m, 0)
     vr_part = Dict()
     for k in keys(m.extension[:vr])
         i = m.extension[:vr][k]
@@ -191,16 +331,15 @@ function acpf_heuristic_directvr(m::PODNonlinearModel)
         setlowerbound(Variable(m.model_mip, m.convhull_binary_links[i][vr_part[i]]), 0.0)
     end
 
-    mip_solver_verbosity(m, 1)
     return
 end
 
 function acpf_warmstart_bounding_model(m::PODNonlinearModel)
 
-    # if !isempty(m.extension[:warmstarter_sol])
-    #     @assert length(m.extension[:warmstarter_sol]) == length(m.model_mip.colVal)
-    #     m.model_mip.colVal = m.extension[:warmstarter_sol]
-    # end
+    if !isempty(m.extension[:warmstarter_sol])
+        @assert length(m.extension[:warmstarter_sol]) == length(m.model_mip.colVal)
+        m.model_mip.colVal = m.extension[:warmstarter_sol]
+    end
 
     return
 end
@@ -283,7 +422,7 @@ function acpf_disc_vars_heuristics(m::PODNonlinearModel, sol::Vector)
     sort!(congestions, by=x->x[3], rev=true)
     println("--- TOTAL congested lines (1e-3) = $(congested_cnt)")
 
-    m.disc_vars = acpf_reselect_disc_vars(m, congestions, congested_cnt >= 0.1 * length(branch_idxs))
+    m.disc_vars = acpf_reselect_disc_vars(m, congestions, true)
     return
 end
 

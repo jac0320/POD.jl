@@ -446,7 +446,7 @@ end
 function mip_solver_builtin_algorithm(m::PODNonlinearModel, algorithm::Int)
 
     if m.mip_solver_id == "CPLEX"
-        insert_timeleft_symbol(m.mip_solver.options, verbosity, :CPXPARAM_Benders_Strategy, m.timeout)
+        insert_timeleft_symbol(m.mip_solver.options, algorithm, :CPXPARAM_Benders_Strategy, m.timeout)
     end
 
     return

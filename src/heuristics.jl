@@ -51,7 +51,6 @@ function heu_pool_multistart(m::PODNonlinearModel)
             interface_load_nonlinear_model(m, heuristic_model, l_var, u_var)
             interface_optimize(heuristic_model)
             heuristic_model_status = interface_get_status(heuristic_model)
-            @show heuristic_model_status
             if heuristic_model_status in [:Optimal, :Suboptimal, :LocalOptimal]
                 candidate_obj = interface_get_objval(heuristic_model)
                 if eval(convertor[m.sense_orig])(candidate_obj, incumb_obj)

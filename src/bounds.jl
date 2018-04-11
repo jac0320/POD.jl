@@ -6,11 +6,11 @@ function conflict_analysis(m::PODNonlinearModel)
     assignment = init_ac_assignments(m)
 
     m.arc_consistency_cuts = Dict()
-    checked = Set()
-    for i in keys(assignment)
-        println("Pivot-AC on $(i)")
-        arc_consistency(m, [], [], i, Set(), m.arc_consistency_cuts)
-    end
+    # for i in keys(assignment)
+    #     println("Pivot-AC on $(i)")
+    #     arc_consistency(m, [], [], i, Set(), m.arc_consistency_cuts)
+    # end
+    arc_consistency(m, [], [], copy(m.candidate_disc_vars), Set(), m.arc_consistency_cuts)
     mip_solver_verbosity(m, 1)
     return
 end

@@ -35,11 +35,10 @@ function global_solve(m::PODNonlinearModel)
     acpf_pre_partition_construction(m)
     while !check_exit(m)
         m.logs[:n_iter] += 1
-        # if acpf_relaxation_heuristic(m)
-        create_bounding_mip(m)  # Build the relaxation model
+        acpf_relaxation_heuristic(m)
+        create_bounding_mip(m)                                       # Build the relaxation model
         acpf_position_bounding_model(m)
         bounding_solve(m)                                            # Solve the relaxation model
-        # end
         update_opt_gap(m)                                            # Update optimality gap
         acpf_algo_measurements(m)
         check_exit(m) && break                                       # Feasibility check
@@ -220,7 +219,6 @@ function local_solve(m::PODNonlinearModel; presolve = false)
     status_heuristic = [:Heuristics, :UserLimit]
     status_reroute = [:Infeasible, :Infeasibles]
 
-    @show local_nlp_status
     if local_nlp_status in status_pass
         candidate_obj = interface_get_objval(local_solve_model)
         candidate_sol = round.(interface_get_solution(local_solve_model), 5)
