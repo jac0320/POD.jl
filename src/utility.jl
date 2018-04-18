@@ -80,8 +80,8 @@ function find_local_partition(part::Vector, sol::Float64)
         end
     end
 
-    error("$(sol) $(part) Solution didn't showed in any partition")
-
+    warn("$(sol) $(part) Solution didn't showed in any partition")
+    return [part[1],part[2]]
     return
 end
 
@@ -94,7 +94,8 @@ function find_local_partition_idx(part::Vector, sol::Float64)
         end
     end
 
-    error("$(sol) $(part) Solution didn't showed in any partition")
+    warn("$(sol) $(part) Solution didn't showed in any partition")
+    return 1
 
     return
 end

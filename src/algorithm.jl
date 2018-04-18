@@ -88,7 +88,6 @@ function presolve(m::PODNonlinearModel)
             bound_tightening(m, use_bound = false)                      # do bound tightening without objective value
             (m.disc_ratio_branch) && (m.disc_ratio = update_disc_ratio(m))
             m.presolve_bt && init_disc(m)
-            # add_partition(m, use_solution=m.best_bound_sol)  # Setting up the initial discretization
             m.loglevel > 0 && println("Presolve ended.")
         elseif m.status[:local_solve] == :Not_Enough_Degrees_Of_Freedom
             warn("presolve ends with local solver yielding $(m.status[:local_solve]). \n Consider more replace equality constraints with >= and <= to resolve this.")
