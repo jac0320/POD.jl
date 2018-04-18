@@ -197,7 +197,7 @@ function acpf_relaxation_heuristic(m::PODNonlinearModel)
     println("~~~~~~~~~~~~~~~~ NEW CODE ~~~~~~~~~~~~~~~~~")
     # Set up an bounding model based on current discretization (with 1 extra partition)
     mip_solver_verbosity(m, 0)
-    create_bounding_mip(m, warmstart=false)
+    # create_bounding_mip(m, warmstart=false)
     # acpf_heuristic_negvr(m)
     # acpf_heuristic_directvr(m)
     acpf_bt(m)
@@ -211,56 +211,72 @@ function acpf_bt(m::PODNonlinearModel)
 
     exhausted = false
     iter_cnt = 0
-    max_iter = 1
+    m.logs[:n_iter] == 1 ? max_iter = 2 : max_iter = 1
+    vi_set = Set(m.extension[:vi][i] for i in keys(m.extension[:vi]))
+    vr_set = Set(m.extension[:vr][i] for i in keys(m.extension[:vr]))
 
     # Perform minmax bt on disc_vars
     start_acpf_bt = time()
-    println("[ACPF] BT tasks count = $(length(m.disc_vars) * 2)")
+    println("[ACPF] BT tasks count = $(length(m.disc_vars))")
+    update_mip_time_limit(m, timelimit=180)
     while !exhausted && iter_cnt < max_iter
         iter_cnt += 1
         exhausted = true
+        println("[ACPF] MAIN LOOP $(iter_cnt)")
         for i in m.disc_vars
-            improvement = false
-            @objective(m.model_mip, Min, Variable(m.model_mip, i))
-            one_solve_start = time()
-            status = solve(m.model_mip, suppress_warnings=true)
-            if status == :Optimal
-                new_lb = m.model_mip.objVal
-                if new_lb >= m.l_var_tight[i] + 10e-5
-                    println("[ACPF] ! Improved LB VAR$(i) >= $(round(new_lb,6)) | TIME=$(round(time()-one_solve_start,2)) | $(m.discretization[i])")
-                    exhausted = false
-                    improvement = true
-                    m.l_var_tight[i] = new_lb
-                else
-                    println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_lb,6))")
-                end
-            else
-                warn("VAR$(i) STATUS=$(status)")
-            end
-            @objective(m.model_mip, Max, Variable(m.model_mip, i))
-            one_solve_start = time()
-            status = solve(m.model_mip, suppress_warnings=true)
-            if status == :Optimal
-                new_ub = m.model_mip.objVal
-                if new_ub <= m.u_var_tight[i] - 10e-5
-                    exhausted = false
-                    improvement = true
-                    m.u_var_tight[i] = new_ub
-                    println("[ACPF] ! Improved UB VAR$(i) <= $(round(new_ub,6)) | TIME=$(round(time()-one_solve_start,2)) | $(m.discretization[i])")
-                else
-                    println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_ub,6))")
-                end
-            else
-                warn("VAR$(i) STATUS=$(status)")
-            end
-            if improvement # Update the bounding model with the improved bounds
-                first_b = max(m.l_var_tight[i], new_lb)
-                last_b = min(m.u_var_tight[i], new_ub)
-                PCnt = length(m.discretization[i])
-                middle_part = [m.discretization[i][j] for j in 2:PCnt-1 if m.discretization[i][j] > first_b && m.discretization[i][j] < last_b]
-                m.discretization[i] = Float64[first_b, middle_part, last_b;]
-                println("[ACPF] Updated discretization $(m.discretization[i])")
+            if i in vi_set
+                improvement = false
                 create_bounding_mip(m, warmstart=false)
+                @objective(m.model_mip, Min, Variable(m.model_mip, i))
+                # i in vr_set && setupperbound(Variable(m.model_mip, i), 0.0)
+                one_solve_start = time()
+                status = solve(m.model_mip, suppress_warnings=true)
+                if status in [:Optimal, :UserLimit]
+                    new_lb = m.model_mip.objBound
+                    if new_lb >= m.l_var_tight[i] + 10e-5
+                        println("[ACPF] ! Improved LB VAR$(i) >= $(round(new_lb,6)) | TIME=$(round(time()-one_solve_start,2)) | $(m.discretization[i])")
+                        exhausted = false
+                        improvement = true
+                    else
+                        println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_lb,6))")
+                    end
+                else
+                    warn("VAR$(i) STATUS=$(status)")
+                end
+                if improvement
+                    PCnt = length(m.discretization[i])
+                    first_b = max(m.l_var_tight[i], new_lb)
+                    m.l_var_tight[i] = first_b - 10e-5
+                    rest_parts = [m.discretization[i][j] for j in 2:PCnt if m.discretization[i][j] > m.l_var_tight[i]]
+                    m.discretization[i] = Float64[m.l_var_tight[i], rest_parts;]
+                    println("[ACPF] Updated discretization $(m.discretization[i])")
+                end
+                improvement = false
+                create_bounding_mip(m, warmstart=false)
+                @objective(m.model_mip, Max, Variable(m.model_mip, i))
+                # i in vr_set && setlowerbound(Variable(m.model_mip, i), 0.0)
+                one_solve_start = time()
+                status = solve(m.model_mip, suppress_warnings=true)
+                if status in [:Optimal, :UserLimit]
+                    new_ub = m.model_mip.objBound
+                    if new_ub <= m.u_var_tight[i] - 10e-5
+                        exhausted = false
+                        improvement = true
+                        println("[ACPF] ! Improved UB VAR$(i) <= $(round(new_ub,6)) | TIME=$(round(time()-one_solve_start,2)) | $(m.discretization[i])")
+                    else
+                        println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_ub,6))")
+                    end
+                else
+                    warn("VAR$(i) STATUS=$(status)")
+                end
+                if improvement # Update the bounding model with the improved bounds
+                    last_b = min(m.u_var_tight[i], new_ub)
+                    PCnt = length(m.discretization[i])
+                    m.u_var_tight[i] = last_b + 10e-5
+                    rest_part = [m.discretization[i][j] for j in 1:PCnt-1 if m.discretization[i][j] < last_b]
+                    m.discretization[i] = Float64[rest_part, m.u_var_tight[i];]
+                    println("[ACPF] Updated discretization $(m.discretization[i])")
+                end
             end
         end
     end
@@ -408,7 +424,7 @@ function acpf_disc_vars_heuristics(m::PODNonlinearModel, sol::Vector)
         p = m.extension[:p][i]
         q = m.extension[:q][i]
         rate_a = m.user_parameters.data["branch"][string(i[1])]["rate_a"]
-        if abs(sol[p]^2+sol[q]^2-rate_a^2) < 1e-3
+        if abs(sol[p]^2+sol[q]^2-rate_a^2) < 1e-6
             congested_cnt += 1
         end
         bind_diff = abs(sol[p]^2+sol[q]^2-rate_a^2)
@@ -416,7 +432,7 @@ function acpf_disc_vars_heuristics(m::PODNonlinearModel, sol::Vector)
         for j in acpf_search_v_terms(m, acpf_convhull_info_index(m), acpf_get_v_idxs(m, i), i)
             y_diff += m.convhull_sol_info[j][2]
         end
-        println("FLOW $(i[1]) : $(i[2]) -> $(i[3]) | RA-DIST $(bind_diff) | TOTAL-Y-DIFF $(y_diff) ")
+        println("FLOW $(i[1]) : $(i[2]) -> $(i[3]) | $(acpf_get_v_idxs(m, i)) | RA-DIST $(bind_diff) | TOTAL-Y-DIFF $(y_diff) ")
         push!(congestions, (i, bind_diff, y_diff))
     end
     sort!(congestions, by=x->x[3], rev=true)
@@ -433,16 +449,17 @@ function acpf_reselect_disc_vars(m::PODNonlinearModel, congestions::Any, conside
     println("--- Focused lines $(congestions[1][1]): R-DIST=$(congestions[1][2]) Y-DIST=$(congestions[1][3])")
     for i in 1:2
         for v in acpf_get_v_idxs(m, congestions[i][1])
-            println("--- LINE $(congestions[i][1][1]):$(congestions[i][1][2])->$(congestions[i][1][3]) | VAR $(congestions[i])")
+            println("--- Y-DIFF LINE $(congestions[i][1][1]):$(congestions[i][1][2])->$(congestions[i][1][3]) | VAR $(v)")
             push!(disc_vars, v)
         end
     end
 
     if consider_congested_line
         for b in congestions
-            if b[2] <= 1e-4
+            if b[2] <= 1e-6
                 vars = acpf_get_v_idxs(m, b[1])
                 for v in vars
+                    println("--- CONGEST LINE $(b[1][1]):$(b[1][2])->$(b[1][3]) | VAR $(v)")
                     push!(disc_vars, v)
                 end
             end
