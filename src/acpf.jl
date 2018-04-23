@@ -218,7 +218,7 @@ function acpf_bt(m::PODNonlinearModel)
     # Perform minmax bt on disc_vars
     start_acpf_bt = time()
     println("[ACPF] BT tasks count = $(length(m.disc_vars))")
-    update_mip_time_limit(m, timelimit=180)
+    update_mip_time_limit(m, timelimit=30)
     while !exhausted && iter_cnt < max_iter
         iter_cnt += 1
         exhausted = true
