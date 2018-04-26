@@ -29,6 +29,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
 
     # parameters used in partitioning algorithm
     disc_ratio::Any                                             # Discretization ratio parameter (use a fixed value for now, later switch to a function)
+    disc_suggest::Any
     disc_uniform_rate::Int                                      # Discretization rate parameter when using uniform partitions
     disc_var_pick::Any                                          # Algorithm for choosing the variables to discretize: 1 for minimum vertex cover, 0 for all variables
     disc_divert_chunks::Int                                     # How many uniform partitions to construct
@@ -78,6 +79,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
 
     # Infeasibility Proof Mode
     feasibility_mode::Bool
+    suggest_ratio::Bool
     slack_links::Dict{Int, Any}                              # Constr ID => slackness variables
     num_slack_vars::Int
 
@@ -222,7 +224,8 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
                                 int_enable,
                                 int_cumulative_disc,
                                 int_fully_disc,
-                                feasibility_mode)
+                                feasibility_mode,
+                                suggest_ratio)
 
         m = new()
 
@@ -289,6 +292,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.int_fully_disc = int_fully_disc
 
         m.feasibility_mode = feasibility_mode
+        m.suggest_ratio = suggest_ratio
 
         m.num_var_orig = 0
         m.num_cont_var_orig = 0
@@ -411,6 +415,7 @@ type PODSolver <: MathProgBase.AbstractMathProgSolver
     int_fully_disc::Bool
 
     feasibility_mode::Bool
+    suggest_ratio::Bool
 
     # other options to be added later on
 end
@@ -441,6 +446,7 @@ function PODSolver(;
     term_patterns = Array{Function}(0),
     constr_patterns = Array{Function}(0),
 
+    disc_suggest = false,
     disc_var_pick = 2,                      # By default use the 15-variable selective rule
     disc_ratio = 4,
     disc_uniform_rate = 2,
@@ -480,6 +486,7 @@ function PODSolver(;
     int_fully_disc = false,
 
     feasibility_mode = false,
+    suggest_ratio = false,
 
     kwargs...
     )
@@ -550,7 +557,8 @@ function PODSolver(;
         int_enable,
         int_cumulative_disc,
         int_fully_disc,
-        feasibility_mode)
+        feasibility_mode,
+        suggest_ratio)
     end
 
 # Create POD nonlinear model: can solve with nonlinear algorithm only
@@ -624,6 +632,7 @@ function MathProgBase.NonlinearModel(s::PODSolver)
     int_fully_disc = s.int_fully_disc
 
     feasibility_mode = s.feasibility_mode
+    suggest_ratio = s.suggest_ratio
 
     return PODNonlinearModel(colorful_pod,
                             loglevel, timeout, maxiter, relgap, gapref, absgap, tol, largebound,
@@ -670,7 +679,8 @@ function MathProgBase.NonlinearModel(s::PODSolver)
                             int_enable,
                             int_cumulative_disc,
                             int_fully_disc,
-                            feasibility_mode)
+                            feasibility_mode,
+                            suggest_ratio)
 end
 
 function MathProgBase.loadproblem!(m::PODNonlinearModel,

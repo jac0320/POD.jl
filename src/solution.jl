@@ -108,7 +108,7 @@ function merge_solution_pool(m::PODNonlinearModel, s::Dict)
     m.bound_sol_pool[:vars] = var_idxs
 
     # Show the summary
-    m.loglevel > 99 && println("POOL size = $(length([i for i in 1:m.bound_sol_pool[:cnt] if m.bound_sol_pool[:stat][i] != :Dead])) / $(m.bound_sol_pool[:cnt]) ")
+    m.loglevel > 199 && println("POOL size = $(length([i for i in 1:m.bound_sol_pool[:cnt] if m.bound_sol_pool[:stat][i] != :Dead])) / $(m.bound_sol_pool[:cnt]) ")
     for i in 1:m.bound_sol_pool[:cnt]
         m.loglevel > 99 && m.bound_sol_pool[:stat][i] != :Dead && println("ITER $(m.bound_sol_pool[:iter][i]) | SOL $(i) | POOL solution obj = $(m.bound_sol_pool[:obj][i])")
     end

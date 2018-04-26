@@ -220,7 +220,6 @@ function get_active_partition_idx(discretization::Dict, val::Float64, idx::Int; 
         end
     end
 
-    warn("Activate parition not found [VAR$(idx)]. Returning default partition 1.")
     return 1
 end
 
