@@ -36,6 +36,7 @@ function global_solve(m::PODNonlinearModel)
     while !check_exit(m)
         m.logs[:n_iter] += 1
         acpf_relaxation_heuristic(m)
+        m.arc_consistency && m.logs[:n_iter] > 1 && conflict_analysis(m) # Arc Consistency to Generate Residual
         create_bounding_mip(m)                                       # Build the relaxation model
         acpf_position_bounding_model(m)
         bounding_solve(m)                                            # Solve the relaxation model
@@ -49,7 +50,6 @@ function global_solve(m::PODNonlinearModel)
         algorithm_automation(m)                                      # Automated adjustments
         acpf_pre_partition_construction(m)
         add_partition(m)                                             # Add extra discretizations
-        m.arc_consistency && conflict_analysis(m)                    # Arc Consistency to Generate Residual
     end
 
     return
@@ -76,7 +76,6 @@ function presolve(m::PODNonlinearModel)
     update_opt_gap(m)
 
     if !check_exit(m)
-        # Initial Position of POD with BT
         if m.status[:local_solve] in status_pass
             m.loglevel > 0 && println("local solver returns feasible point")
             bound_tightening(m, use_bound = true)    # performs bound-tightening with the local solve objective value

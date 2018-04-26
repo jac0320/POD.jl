@@ -218,19 +218,21 @@ function acpf_bt(m::PODNonlinearModel)
     # Perform minmax bt on disc_vars
     start_acpf_bt = time()
     println("[ACPF] BT tasks count = $(length(m.disc_vars))")
-    update_mip_time_limit(m, timelimit=180)
+    update_mip_time_limit(m, timelimit=30)
     while !exhausted && iter_cnt < max_iter
         iter_cnt += 1
         exhausted = true
         println("[ACPF] MAIN LOOP $(iter_cnt)")
         for i in m.disc_vars
             if i in vi_set
+                # =============================================================
                 improvement = false
-                create_bounding_mip(m, warmstart=false)
+                create_bounding_mip(m, warmstart=false, cuts=false)
+                @constraint(m.model_mip, m.model_mip.obj >= m.best_bound)
                 @objective(m.model_mip, Min, Variable(m.model_mip, i))
-                # i in vr_set && setupperbound(Variable(m.model_mip, i), 0.0)
                 one_solve_start = time()
                 status = solve(m.model_mip, suppress_warnings=true)
+                collect_lb_pool(m)    # Always collect details sub-optimal solution
                 if status in [:Optimal, :UserLimit]
                     new_lb = m.model_mip.objBound
                     if new_lb >= m.l_var_tight[i] + 10e-5
@@ -240,6 +242,13 @@ function acpf_bt(m::PODNonlinearModel)
                     else
                         println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_lb,6))")
                     end
+                    collect_lb_pool(m)
+                elseif status == :Infeasible
+                    warn("VAR$(i) STATUS=$(status)")
+                    m.discretization[i] = [-0.0002,0.0002]
+                    m.logs[:total_time] += time() - start_acpf_bt
+                    m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
+                    return
                 else
                     warn("VAR$(i) STATUS=$(status)")
                 end
@@ -251,10 +260,11 @@ function acpf_bt(m::PODNonlinearModel)
                     m.discretization[i] = Float64[m.l_var_tight[i], rest_parts;]
                     println("[ACPF] Updated discretization $(m.discretization[i])")
                 end
+                # =============================================================
                 improvement = false
-                create_bounding_mip(m, warmstart=false)
+                create_bounding_mip(m, warmstart=false, cuts=false)
+                @constraint(m.model_mip, m.model_mip.obj >= m.best_bound)
                 @objective(m.model_mip, Max, Variable(m.model_mip, i))
-                # i in vr_set && setlowerbound(Variable(m.model_mip, i), 0.0)
                 one_solve_start = time()
                 status = solve(m.model_mip, suppress_warnings=true)
                 if status in [:Optimal, :UserLimit]
@@ -266,6 +276,13 @@ function acpf_bt(m::PODNonlinearModel)
                     else
                         println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_ub,6))")
                     end
+                    collect_lb_pool(m)
+                elseif status == :Infeasible
+                    warn("VAR$(i) STATUS=$(status)")
+                    m.discretization[i] = [-0.0002,0.0002]
+                    m.logs[:total_time] += time() - start_acpf_bt
+                    m.logs[:time_left] = max(0.0, m.timeout - m.logs[:total_time])
+                    return
                 else
                     warn("VAR$(i) STATUS=$(status)")
                 end
@@ -277,6 +294,7 @@ function acpf_bt(m::PODNonlinearModel)
                     m.discretization[i] = Float64[rest_part, m.u_var_tight[i];]
                     println("[ACPF] Updated discretization $(m.discretization[i])")
                 end
+                # =============================================================
             end
         end
     end

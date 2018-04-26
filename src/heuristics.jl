@@ -60,7 +60,7 @@ function heu_pool_multistart(m::PODNonlinearModel)
                 end
                 found_feasible = true
             else
-                m.loglevel > 99 && println("Multi-start heuristic returns $(heuristic_model_status) [SOL:$(i)]")
+                m.loglevel > 199 && println("Multi-start heuristic returns $(heuristic_model_status) [SOL:$(i)]")
             end
             m.bound_sol_pool[:ubstart][i] = true
         end

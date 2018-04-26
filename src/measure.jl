@@ -4,13 +4,33 @@ function measure_relaxed_deviation(m::PODNonlinearModel;sol=nothing)
 
     isempty(sol) && return
 
+    m.disc_suggest = Dict{Any, Any}()
+
     dev = []
     for k in keys(m.nonconvex_terms)
         y_idx = m.nonconvex_terms[k][:y_idx]
         y_hat = sol[y_idx]
         y_val = m.nonconvex_terms[k][:evaluator](m.nonconvex_terms[k], sol)
         y_ext = measure_extreme_points(m, k, m.discretization, sol)
-        push!(dev, (y_idx, abs(y_hat-y_val), y_hat, y_val, Set(m.nonconvex_terms[k][:var_idxs]), y_ext, [sol[j] for j in Set(m.nonconvex_terms[k][:var_idxs])], k))
+        info_set = (y_idx, abs(y_hat-y_val), y_hat, y_val, Set(m.nonconvex_terms[k][:var_idxs]), y_ext, [sol[j] for j in Set(m.nonconvex_terms[k][:var_idxs])],k)
+        push!(dev, info_set)
+        for j in Set(m.nonconvex_terms[k][:var_idxs])
+            local_interval = find_local_partition(m.discretization[j], sol[j])
+            local_length = abs(local_interval[2] - local_interval[1])
+            var_tup = Set(m.nonconvex_terms[k][:var_idxs])
+            if length(var_tup) == 1
+                j_counter = j
+            else
+                m.nonconvex_terms[k][:var_idxs][1] == j ? j_counter = m.nonconvex_terms[k][:var_idxs][2] : j_counter = m.nonconvex_terms[k][:var_idxs][1]
+            end
+            isapprox(abs(y_hat-y_val), 0.0;atol=1e-4) ? suggestion = 4.0 : suggestion = max(4.0, local_length/(abs(y_hat/sol[j_counter]-sol[j])*2))
+            if isnan(suggestion) || suggestion == Inf
+                suggestion = m.disc_ratio
+            end
+            suggestion = min(suggestion, 64)
+            # println("VAR[$(j)]=$(sol[j]) COUTVAR[$(j_counter)]=$(sol[j_counter]) Y-val=$(round(y_val,6)) Y-hat=$(round(y_hat,6)) Δ=$(suggestion)")
+            haskey(m.disc_suggest, j) ? push!(m.disc_suggest[j], suggestion) : m.disc_suggest[j] = [suggestion]
+        end
     end
 
     sort!(dev, by=x->x[2])
@@ -30,7 +50,12 @@ function measure_relaxed_deviation(m::PODNonlinearModel;sol=nothing)
     end
     println("====================================================================")
     for i in dev
-        m.loglevel > 99 && println("Y-VAR$(i[1]): DIFF=$(i[2]) || Y-hat=$(i[3]), Y-val=$(i[4]) || COMP $(i[5]) ")
+        m.loglevel > 99 && println("Y-VAR$(i[1]): DIFF=$(i[2]) || Y-hat=$(i[3]), Y-val=$(i[4]) || COMP $(i[5])")
+    end
+    println("====================================================================")
+    for i in keys(m.disc_suggest)
+        m.disc_suggest[i] = mean(m.disc_suggest[i])
+        println("VAR$(i) Δ-Suggestions=$(m.disc_suggest[i])")
     end
     println("====================================================================")
 
