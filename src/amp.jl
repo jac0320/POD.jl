@@ -362,8 +362,9 @@ function add_adaptive_partition(m::PODNonlinearModel;use_ratio=nothing, branchin
             point = correct_point(m, discretization[i], point, i)
             for j in 1:(λCnt-1)
                 if point >= discretization[i][j] && point <= discretization[i][j+1]  # Locating the right location
+                    @show m.suggest_ratio
                     if m.suggest_ratio
-                        ratio = m.disc_suggest[i]
+                        haskey(m.disc_suggest,i) ? ratio = m.disc_suggest[i] : ratio = 8
                     end
                     radius = calculate_radius(discretization[i], j, ratio)
                     insert_partition(m, i, j, point, radius, discretization[i])

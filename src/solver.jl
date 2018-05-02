@@ -769,6 +769,9 @@ function MathProgBase.loadproblem!(m::PODNonlinearModel,
     fetch_nlp_solver_identifier(m)
     fetch_minlp_solver_identifier(m)
 
+    m.disc_suggest = Dict()
+
+
     # Solver Dependent Options
     if m.mip_solver_id != :Gurobi
         m.convhull_warmstart == false
