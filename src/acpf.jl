@@ -242,7 +242,6 @@ function acpf_bt(m::PODNonlinearModel)
                     else
                         println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_lb,6))")
                     end
-                    collect_lb_pool(m)
                 elseif status == :Infeasible
                     warn("VAR$(i) STATUS=$(status)")
                     m.discretization[i] = [-0.0002,0.0002]
@@ -276,7 +275,6 @@ function acpf_bt(m::PODNonlinearModel)
                     else
                         println("[ACPF] nothing on VAR$(i) | TIME=$(round(time()-one_solve_start,2)) | OBJ=$(round(new_ub,6))")
                     end
-                    collect_lb_pool(m)
                 elseif status == :Infeasible
                     warn("VAR$(i) STATUS=$(status)")
                     m.discretization[i] = [-0.0002,0.0002]
