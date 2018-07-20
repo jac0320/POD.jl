@@ -46,6 +46,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
     convhull_ebd_encode::Any                                    # Encoding method used for convhull_ebd
     convhull_ebd_ibs::Bool                                      # Enable independent branching scheme
     convhull_ebd_link::Bool                                     # Linking constraints between x and α, type 1 usse hierarchical and type 2 with big-m
+    convhull_generic_sos2::Bool                                 # Use built-in sos-2 constraint implemented by solvers
 
     # Presolving Parameters
     presolve_track_time::Bool                                   # Account presolve time for total time usage
@@ -190,6 +191,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
                                 convhull_ebd_link,
                                 convhull_warmstart,
                                 convhull_no_good_cuts,
+                                convhull_generic_sos2,
                                 presolve_track_time,
                                 presolve_bt,
                                 presolve_timeout,
@@ -245,6 +247,7 @@ type PODNonlinearModel <: MathProgBase.AbstractNonlinearModel
         m.convhull_ebd_link = convhull_ebd_link
         m.convhull_warmstart = convhull_warmstart
         m.convhull_no_good_cuts = convhull_no_good_cuts
+        m.convhull_generic_sos2 = convhull_generic_sos2
 
         m.presolve_track_time = presolve_track_time
         m.presolve_bt = presolve_bt
@@ -362,6 +365,7 @@ type PODSolver <: MathProgBase.AbstractMathProgSolver
     convhull_ebd_link::Bool
     convhull_warmstart::Bool
     convhull_no_good_cuts::Bool
+    convhull_generic_sos2::Bool
 
     presolve_track_time::Bool
     presolve_bt::Any
@@ -426,6 +430,7 @@ function PODSolver(;
     convhull_ebd_link = false,
     convhull_warmstart = true,
     convhull_no_good_cuts = true,
+    convhull_generic_sos2 = false,
 
     presolve_track_time = true,
     presolve_maxiter = 10,
@@ -497,6 +502,7 @@ function PODSolver(;
         convhull_ebd_link,
         convhull_warmstart,
         convhull_no_good_cuts,
+        convhull_generic_sos2,
         presolve_track_time,
         presolve_bt,
         presolve_timeout,
@@ -563,6 +569,7 @@ function MathProgBase.NonlinearModel(s::PODSolver)
     convhull_ebd_link = s.convhull_ebd_link
     convhull_warmstart = s.convhull_warmstart
     convhull_no_good_cuts = s.convhull_no_good_cuts
+    convhull_generic_sos2 = s.convhull_generic_sos2
 
     presolve_track_time = s.presolve_track_time
     presolve_bt = s.presolve_bt
@@ -610,6 +617,7 @@ function MathProgBase.NonlinearModel(s::PODSolver)
                             convhull_ebd_link,
                             convhull_warmstart,
                             convhull_no_good_cuts,
+                            convhull_generic_sos2,
                             presolve_track_time,
                             presolve_bt,
                             presolve_timeout,

@@ -340,10 +340,15 @@ function amp_convhull_α(m::PODNonlinearModel, indices::Any, α::Dict, dim::Tupl
                 αCnt = Int(ceil(log(2,partition_cnt)))
                 α[i] = @variable(m.model_mip, [1:αCnt], Bin, basename=string("YL",i))
             else
-                α[i] = @variable(m.model_mip, [1:partition_cnt], Bin, basename="A$(i)")
-                @constraint(m.model_mip, sum(α[i]) == 1)
-                @constraint(m.model_mip, Variable(m.model_mip, i) >= sum(α[i][j]*discretization[i][j] for j in 1:lambda_cnt-1)) # Add x = f(α) for regulating the domains
-                @constraint(m.model_mip, Variable(m.model_mip, i) <= sum(α[i][j-1]*discretization[i][j] for j in 2:lambda_cnt))
+                if m.convhull_generic_sos2
+                    α[i] = @variable(m.model_mip, [1:lambda_cnt], basename="A$(i)") # Constructing lifting end λ variables: NOT binary variables
+                    @constraint(m.model_mip, sum(α[i]) == 1)
+                else
+                    α[i] = @variable(m.model_mip, [1:partition_cnt], Bin, basename="A$(i)")
+                    @constraint(m.model_mip, sum(α[i]) == 1)
+                    @constraint(m.model_mip, Variable(m.model_mip, i) >= sum(α[i][j]*discretization[i][j] for j in 1:lambda_cnt-1)) # Add x = f(α) for regulating the domains
+                    @constraint(m.model_mip, Variable(m.model_mip, i) <= sum(α[i][j-1]*discretization[i][j] for j in 2:lambda_cnt))
+                end
             end
         end
     end
@@ -356,6 +361,7 @@ amp_convhull_α(m::PODNonlinearModel, idx::Int, α::Dict, dim, d::Dict) = amp_co
 function amp_no_good_cut_α(m::PODNonlinearModel, α::Dict)
 
     println("Global Incumbent solution objective = $(m.best_obj)")
+    m.convhull_generic_sos2 && error("No no_good_cut should be applied when using generic sos-2 formulation.")
 
     for i in 1:m.bound_sol_pool[:cnt]
         (m.bound_sol_pool[:stat][i] == :Cutoff) && (m.bound_sol_pool[:stat][i] = :Alive)
@@ -376,6 +382,7 @@ function amp_warmstart_α(m::PODNonlinearModel, α::Dict)
     d = m.discretization
 
     if m.bound_sol_pool[:cnt] >= 2 # can only warm-start the problem when pool is large enough
+        m.convhull_generic_sos2 && error("No warm-start should be applied when using generic sos-2 formulation.")
         ws_idx = -1
         m.sense_orig == :Min ? ws_obj = Inf : ws_obj = -Inf
         comp_opr = Dict(:Min=>:<, :Max=>:>)
@@ -520,6 +527,7 @@ function amp_post_inequalities_cont(m::PODNonlinearModel, discretization::Dict, 
 
     # Embedding formulation
     if m.convhull_formulation == "sos2" && m.convhull_ebd && partition_cnt > 2
+        m.convhull_generic_sos2 && error("No embedding should be applied when using generic sos-2 formulation.")
         ebd_map = embedding_map(lambda_cnt, m.convhull_ebd_encode, m.convhull_ebd_ibs)
         YCnt = Int(ebd_map[:L])
         @assert YCnt == length(α[var_ind])
@@ -535,14 +543,23 @@ function amp_post_inequalities_cont(m::PODNonlinearModel, discretization::Dict, 
 
     # SOS-2 Formulation
     if m.convhull_formulation == "sos2"
-        for j in 1:lambda_cnt
-            sliced_indices = collect_indices(λ[ml_indices][:indices], cnt, [j], dim)
-            if (j == 1)
-                @constraint(m.model_mip, sum(λ[ml_indices][:vars][sliced_indices]) <= α[var_ind][j])
-            elseif (j == lambda_cnt)
-                @constraint(m.model_mip, sum(λ[ml_indices][:vars][sliced_indices]) <= α[var_ind][partition_cnt])
-            else
-                @constraint(m.model_mip, sum(λ[ml_indices][:vars][sliced_indices]) <= sum(α[var_ind][(j-1):j]))
+        if m.convhull_generic_sos2 # New code
+            @assert length(α[var_ind]) == lambda_cnt
+            for j in 1:lambda_cnt
+                sliced_indices = collect_indices(λ[ml_indices][:indices], cnt, [j], dim)
+                @constraint(m.model_mip, α[var_ind][j] == sum(λ[ml_indices][:vars][sliced_indices]))    # Link the lifted end variables with λs
+            end
+            addSOS2(m.model_mip, α[var_ind])
+        else
+            for j in 1:lambda_cnt
+                sliced_indices = collect_indices(λ[ml_indices][:indices], cnt, [j], dim)
+                if (j == 1)
+                    @constraint(m.model_mip, sum(λ[ml_indices][:vars][sliced_indices]) <= α[var_ind][j])
+                elseif (j == lambda_cnt)
+                    @constraint(m.model_mip, sum(λ[ml_indices][:vars][sliced_indices]) <= α[var_ind][partition_cnt])
+                else
+                    @constraint(m.model_mip, sum(λ[ml_indices][:vars][sliced_indices]) <= sum(α[var_ind][(j-1):j]))
+                end
             end
         end
         return

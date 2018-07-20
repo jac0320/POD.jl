@@ -251,7 +251,7 @@ function bounding_solve(m::PODNonlinearModel)
     # Updates time metric and position solver
     update_mip_time_limit(m)
     update_boundstop_options(m)
-    
+
 #    print(m.model_mip)
 #JuMP.build(m.model_mip)
 #    adjust_branch_priority(m)
